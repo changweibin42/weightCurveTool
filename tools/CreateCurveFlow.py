@@ -237,14 +237,3 @@ def rebuild_curves_from_set(set_name, kind, closed, ctx):
     except Exception as e:
         log.warn(f"重建失败: {e}")
         return False
-        
-    if kind == 'main':
-        update_combined_vertex_colors(ctx, mesh_name, closed=closed,
-                                      joints=group_joints)
-    # ★ 刷新显示
-    try:
-        from ..core import refresh_display_curves
-        refresh_display_curves()
-    except Exception:
-        pass
-    return bool(result)        
