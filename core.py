@@ -8,7 +8,7 @@ from .tools.GroupManager import GroupManager
 from .tools.VertexColorDisplay import VertexColorDisplay
 from .tools.WeightCalculator import WeightCalculator
 from .tools.SurfaceSlideBuilder import SurfaceSlideBuilder
-from .tools.MayaSelectors import get_selected_joint
+from .tools.MayaSelectors import get_selected_mesh_transform, get_selected_joint
 from .tools.JointState import apply_liw_on_pick, get_parent_joint
 from .tools.SkinWeightPainter import is_in_skin
 
