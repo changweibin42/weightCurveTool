@@ -352,17 +352,6 @@ class SurfaceSlideBuilder(object):
         except Exception:
             return False
 
-    def _sample_curve(self, crv_name, n, closed):
-        shapes = cmds.listRelatives(crv_name, shapes=True, type='nurbsCurve')
-        if not shapes:
-            return None
-        cs = shapes[0]
-        pts = []
-        for i in range(n):
-            t = i / float(n) if closed else i / float(n - 1)
-            pts.append(cmds.pointOnCurve(cs, parameter=t,
-                                         position=True, turnOnPercentage=True))
-        return np.array(pts, dtype=float)
 
     def _ridge_tangents(self, pts, closed):
         n = len(pts)
@@ -477,50 +466,8 @@ class SurfaceSlideBuilder(object):
             raise RuntimeError("Invalid corresponding boundary EPs")
         return ordered.tolist()
 
-    def _laplacian_closed(self, pts):
-        arr = np.array([np.asarray(p, dtype=float) for p in pts])
-        for _ in range(self.lap_iter):
-            prev = np.roll(arr, 1, axis=0)
-            nxt = np.roll(arr, -1, axis=0)
-            mid = 0.5 * (prev + nxt)
-            arr = (1 - self.lap_weight) * arr + self.lap_weight * mid
-        return list(arr)
 
-    def _laplacian_open(self, pts):
-        arr = [np.asarray(p, dtype=float) for p in pts]
-        n = len(arr)
-        if n < 3:
-            return arr
-        for _ in range(self.lap_iter):
-            new = [arr[0].copy()]
-            for i in range(1, n - 1):
-                mid = 0.5 * (arr[i-1] + arr[i+1])
-                new.append((1 - self.lap_weight) * arr[i] + self.lap_weight * mid)
-            new.append(arr[-1].copy())
-            arr = new
-        return arr
 
-    def _resample_arclength(self, pts, n_target, closed):
-        arr = np.array([np.asarray(p, dtype=float) for p in pts])
-        m = len(arr)
-        if m < 2:
-            return list(arr)
-        work = np.vstack([arr, arr[0:1]]) if closed else arr
-        diffs = np.diff(work, axis=0)
-        segs = np.linalg.norm(diffs, axis=1)
-        cum = np.concatenate([[0.0], np.cumsum(segs)])
-        total = cum[-1]
-        if total < 1e-10:
-            return [arr[i] for i in range(min(n_target, m))]
-        targets = (np.arange(n_target) / n_target * total) if closed \
-                  else (np.arange(n_target) / (n_target - 1) * total)
-        idxs = np.searchsorted(cum, targets, side='right') - 1
-        idxs = np.clip(idxs, 0, len(cum) - 2)
-        r = (targets - cum[idxs]) / (cum[idxs + 1] - cum[idxs] + 1e-10)
-        result = work[idxs] + r[:, None] * (work[idxs + 1] - work[idxs])
-        return [row for row in result]
-
-    # ==================== 曲线 ====================
 
     def _make_curve(self, pts, name, closed, color):
         if len(pts) < 4:
