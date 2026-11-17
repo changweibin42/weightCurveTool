@@ -34,12 +34,8 @@ from ..Logger import log
 from .ProjectionRegions import (
     _projection_ownership_mask,
     _projection_connected_band,
-    _projection_plane_rings,
-    _projection_surface_distances,
     _projection_ik_ring_gate,
-    _projection_axis_enclosed,
     _projection_boundary_loops,
-    _projection_distal_seeds,
     _projection_surface_partition,
     _projection_complete_support_tails,
     _projection_ik_assignment_plan,
@@ -48,20 +44,10 @@ from .ProjectionRegions import (
 
 
 from .ProjectionProfiles import (
-    bezier_v,
-    bezier_t,
-    get_weight,
-    _ik_x,
     _ik_xs,
     _ik_weights,
     _soft_weights,
     _split_weights,
-    _cloth_weights,
-    _cloth_point_to_chain_dist_t,
-    _cloth_sample_chain_positions,
-    _cloth_build_local_radius_curves,
-    _cloth_evaluate_local_radius,
-    _cloth_bezier_eval,
     _cloth_calc_main_chain_mix,
     _cloth_fk_chain_weights,
 )
@@ -134,9 +120,6 @@ def _world_pos(node):
     return np.array(cmds.xform(node, q=True, ws=True, t=True), dtype=float)
 
 
-def _world_x_axis(node):
-    m = cmds.xform(node, q=True, ws=True, m=True)
-    return np.array([m[0], m[1], m[2]], dtype=float)
 
 
 def _mesh_world_points(shape_name):
@@ -220,14 +203,6 @@ def _update_paint(skin_name):
         log.warn(f"更新 paint 显示失败: {e}")
 
 
-def _set_mesh_points(shape_name, points_arr):
-    if points_arr is None:
-        return
-    fn = _mesh_fn(shape_name)
-    mpts = om.MPointArray()
-    for p in points_arr:
-        mpts.append(om.MPoint(float(p[0]), float(p[1]), float(p[2])))
-    fn.setPoints(mpts, om.MSpace.kWorld)
 
 
 def _short_name(node):
@@ -236,31 +211,6 @@ def _short_name(node):
     return node.split('|')[-1].split(':')[-1]
 
 
-def _find_parent_influence(joint, skin_name):
-    influences = _get_influences(skin_name)
-    if not influences:
-        return None
-    full_set = set(influences)
-    short_to_full = {_short_name(j): j for j in influences}
-
-    cur = joint
-    for _ in range(64):
-        pars = cmds.listRelatives(cur, parent=True, fullPath=True) or []
-        if not pars:
-            return None
-        par = pars[0]
-        if par in full_set:
-            return par
-        short_par = _short_name(par)
-        if short_par in short_to_full:
-            return short_to_full[short_par]
-        cur = par
-    return None
-
-
-# ============================================================================
-# 模式：soft（次级）
-# ============================================================================
 
 def _projection_influence(node, influences):
     """Resolve full DAG identity; do not strip namespaces or guess duplicates."""
@@ -1351,33 +1301,6 @@ def _paint_eye(mesh_name, skin_name, xs=None, ys=None, r=None):
 # 单 influence 写入（ik 使用）
 # ============================================================================
 
-def _apply_skin_weights(mesh_name, skin_name, paint_weights):
-    paint_jnt = _get_paint_trans(skin_name)
-    if not paint_jnt:
-        unlocks = _get_unlocked_influences(skin_name)
-        if not unlocks:
-            log.warn("无法确定写入目标 joint")
-            return
-        paint_jnt = unlocks[0]
-
-    fn_skin = _build_fn_skin(skin_name)
-    path = _shape_dag(mesh_name)
-    all_influences = _get_influences(skin_name)
-    if paint_jnt not in all_influences:
-        log.warn(f"'{paint_jnt}' 不在 skinCluster influence 列表里")
-        return
-    index = all_influences.index(paint_jnt)
-    n_vtx = len(paint_weights)
-    matrix = np.asarray(paint_weights, dtype=float).reshape(n_vtx, 1)
-    _write_weights(fn_skin, path, om.MIntArray([index]), matrix)
-    _update_paint(skin_name)
-
-
-# ============================================================================
-# 主入口
-# ============================================================================
-
-MODES = ('soft', 'ik', 'spine', 'brow', 'belt', 'cloth', 'eye')
 
 
 def paint(mode, mesh_name=None, xs=None, ys=None, r=1.0, target_joint=None, range_mode='auto',reference_space='current'):
