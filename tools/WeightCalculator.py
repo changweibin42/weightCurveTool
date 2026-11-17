@@ -6,6 +6,14 @@ import maya.cmds as cmds
 import maya.api.OpenMaya as om
 import maya.api.OpenMayaAnim as oma
 import numpy as np
+
+from .CurveRefine import (
+    _unit,
+    fit_circle_3d as _fit_circle_3pts,
+    _arc_tangent_unit,
+    _segment_arc_params,
+    _hermite_chain,
+)
 from time import perf_counter
 
 from ..Logger import log
@@ -193,136 +201,7 @@ def _boundary_bezier_fractions(t, side, ridge, xs, ys, mode):
     return np.clip(fraction,0.,1.)
 
 
-# ========================== 圆弧切线 Hermite 采样 ==========================
-
-def _unit(v):
-    ln = np.linalg.norm(v)
-    return v / ln if ln > 1e-9 else np.zeros_like(v)
-
-
-def _fit_circle_3pts(p1, p2, p3):
-    pts = np.array([p1, p2, p3], dtype=float)
-    centroid = pts.mean(axis=0)
-    centered = pts - centroid
-    try:
-        _, s, Vt = np.linalg.svd(centered, full_matrices=False)
-    except Exception:
-        return None
-    if len(s) >= 2 and s[1] < 1e-8 * max(s[0], 1e-12):
-        return None
-    u, v = Vt[0], Vt[1]
-    x, y = centered @ u, centered @ v
-    A = np.column_stack([x, y, np.ones(len(pts))])
-    b = -(x * x + y * y)
-    try:
-        D, E, F = np.linalg.lstsq(A, b, rcond=None)[0]
-    except Exception:
-        return None
-    cx, cy = -D / 2.0, -E / 2.0
-    r2 = cx * cx + cy * cy - F
-    if r2 <= 1e-12:
-        return None
-    return centroid + cx * u + cy * v, float(np.sqrt(r2)), u, v
-
-
-def _arc_tangent_unit(p_prev, p_curr, p_next):
-    if p_prev is None and p_next is None:
-        return np.zeros(3, dtype=float)
-    if p_prev is None:
-        return _unit(p_next - p_curr)
-    if p_next is None:
-        return _unit(p_curr - p_prev)
-    fit = _fit_circle_3pts(p_prev, p_curr, p_next)
-    if fit is None:
-        return _unit(p_next - p_prev)
-    center, radius, u, v = fit
-    radial = p_curr - center
-    normal = np.cross(u, v)
-    ln = np.linalg.norm(normal)
-    if ln < 1e-9:
-        return _unit(p_next - p_prev)
-    normal = normal / ln
-    tangent = np.cross(normal, radial)
-    if np.dot(tangent, p_next - p_curr) < 0:
-        tangent = -tangent
-    return _unit(tangent)
-
-
-def _segment_arc_params(p_a, p_b, p_helper):
-    fit = _fit_circle_3pts(p_a, p_b, p_helper)
-    if fit is None:
-        return 0.0, 0.0
-    center, radius, u, v = fit
-    r_a = p_a - center
-    r_b = p_b - center
-    ln_a = np.linalg.norm(r_a)
-    ln_b = np.linalg.norm(r_b)
-    if ln_a < 1e-9 or ln_b < 1e-9:
-        return 0.0, 0.0
-    cos_theta = float(np.dot(r_a, r_b) / (ln_a * ln_b))
-    cos_theta = max(-1.0, min(1.0, cos_theta))
-    return radius, float(np.arccos(cos_theta))
-
-
-def _hermite_chain(anchors, closed, samples_per_segment):
-    pts = [np.asarray(p, dtype=float) for p in anchors]
-    n = len(pts)
-    if n < 2:
-        return [p.copy() for p in pts]
-    dirs = []
-    for i in range(n):
-        if closed and n >= 3:
-            p_prev = pts[(i - 1) % n]
-            p_curr = pts[i]
-            p_next = pts[(i + 1) % n]
-        else:
-            p_curr = pts[i]
-            p_prev = pts[i - 1] if i > 0 else None
-            p_next = pts[i + 1] if i + 1 < n else None
-        dirs.append(_arc_tangent_unit(p_prev, p_curr, p_next))
-    seg_count = n if closed else (n - 1)
-    seg_params = []
-    for i in range(seg_count):
-        p_a = pts[i % n]
-        p_b = pts[(i + 1) % n]
-        if closed and n >= 3:
-            p_helper = pts[(i + 2) % n]
-        else:
-            if i + 2 < n:
-                p_helper = pts[i + 2]
-            elif i > 0:
-                p_helper = pts[i - 1]
-            else:
-                p_helper = None
-        if p_helper is None:
-            seg_params.append((0.0, 0.0))
-        else:
-            seg_params.append(_segment_arc_params(p_a, p_b, p_helper))
-    result = []
-    for i in range(seg_count):
-        p0 = pts[i % n]
-        p1 = pts[(i + 1) % n]
-        d0 = dirs[i % n]
-        d1 = dirs[(i + 1) % n]
-        R, theta = seg_params[i]
-        chord = float(np.linalg.norm(p1 - p0))
-        L = 4.0 * np.tan(theta / 4.0) * R if (R > 1e-9 and theta > 1e-6) else chord
-        m0 = d0 * L
-        m1 = d1 * L
-        for j in range(samples_per_segment):
-            s = j / samples_per_segment
-            s2 = s * s
-            s3 = s2 * s
-            h00 = 2 * s3 - 3 * s2 + 1
-            h10 = s3 - 2 * s2 + s
-            h01 = -2 * s3 + 3 * s2
-            h11 = s3 - s2
-            p = h00 * p0 + h10 * m0 + h01 * p1 + h11 * m1
-            result.append(p)
-    result.append(pts[0].copy() if closed else pts[-1].copy())
-    return result
-
-
+# ========================== 圆弧切线 Hermite 采样（共享实现） ==========================
 def _get_skin_influence_weights(mesh_name, joint_name, expected_count):
     """严格读取指定 Joint 的逐顶点 SkinCluster 权重。"""
 
