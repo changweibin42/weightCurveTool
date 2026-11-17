@@ -11,7 +11,8 @@
 
 缓存失效：
   · embeddings 缓存在 triangulate 节点的 wcs_embedding attribute
-  · 指纹 (numVertices, numFaces)，拓扑变化时重算
+  · 指纹包含缓存算法版本、Rest Pose 顶点坐标和三角面连接关系
+  · 缓存缺少指纹、形状错误或包含非有限数值时重新计算
 """
 import hashlib
 import numpy as np
@@ -42,16 +43,21 @@ class RestPoseSurface(object):
     def _build(self):
         self._ensure_triangulate()
         vertices, faces = self._get_triangulate_geo()
-        fingerprint = (len(vertices), len(faces))
+        fingerprint = self._embedding_fingerprint(vertices, faces)
 
-        embeddings = self._read_cached_embedding(fingerprint)
+        embeddings = self._read_cached_embedding(fingerprint, len(vertices))
         if embeddings is None:
             log.info("[RestPoseSurface] {}: 计算测地距离 ({} verts)...".format(
                 self.mesh_name, len(vertices)))
             distances = get_fast_distance_matrix(vertices, faces)
             log.info("[RestPoseSurface] MDS 嵌入到 8 维...")
             embeddings = get_mds_embeddings_fast(distances, n_components=8)
-            self._write_cached_embedding(embeddings)
+            embeddings = np.asarray(embeddings, dtype=np.float64)
+            if embeddings.shape != (len(vertices), 8) or not np.all(np.isfinite(embeddings)):
+                raise RuntimeError(
+                    "MDS 嵌入结果无效: shape={}, expected=({}, 8)".format(
+                        embeddings.shape, len(vertices)))
+            self._write_cached_embedding(embeddings, fingerprint)
 
         self.embeddings = embeddings
         self.core = KDTreeCopy(vertices, faces)
@@ -87,23 +93,58 @@ class RestPoseSurface(object):
         faces = np.array(face_connects).reshape(-1, 3)
         return vertices, faces
 
-    def _read_cached_embedding(self, fingerprint):
+    @staticmethod
+    def _embedding_fingerprint(vertices, faces):
+        """为 Rest Pose 几何生成稳定指纹；不依赖当前变形 Pose。"""
+        vertices = np.ascontiguousarray(np.asarray(vertices, dtype=np.float64))
+        faces = np.ascontiguousarray(np.asarray(faces, dtype=np.int64))
+        digest = hashlib.blake2b(digest_size=20)
+        # 修改嵌入算法或缓存语义时递增版本，主动淘汰旧缓存。
+        digest.update(b"RestPoseSurface.embedding.v2")
+        digest.update(np.asarray(vertices.shape, dtype=np.int64).tobytes())
+        digest.update(vertices.tobytes())
+        digest.update(np.asarray(faces.shape, dtype=np.int64).tobytes())
+        digest.update(faces.tobytes())
+        return digest.hexdigest()
+
+    def _read_cached_embedding(self, fingerprint, vertex_count):
+        fingerprint_attr = self.triangulate_name + ".wcs_embedding_fingerprint"
         if not cmds.attributeQuery(self.EMBEDDING_ATTR, node=self.triangulate_name, exists=True):
             return None
+        if not cmds.attributeQuery("wcs_embedding_fingerprint",
+                                   node=self.triangulate_name, exists=True):
+            # 旧版本缓存没有几何指纹，不能证明与当前 Rest Pose 一致。
+            return None
         try:
+            cached_fingerprint = cmds.getAttr(fingerprint_attr)
+            if cached_fingerprint != fingerprint:
+                return None
             raw = cmds.getAttr(self.triangulate_name + "." + self.EMBEDDING_ATTR)
-            arr = np.array(raw).reshape(-1, 8)
-            if arr.shape[0] != fingerprint[0]:
+            arr = np.asarray(raw, dtype=np.float64).reshape(-1, 8)
+            if arr.shape != (vertex_count, 8) or not np.all(np.isfinite(arr)):
                 return None
             return arr
         except Exception:
             return None
 
-    def _write_cached_embedding(self, embeddings):
+    def _write_cached_embedding(self, embeddings, fingerprint):
+        embeddings = np.asarray(embeddings, dtype=np.float64)
+        if embeddings.ndim != 2 or embeddings.shape[1] != 8:
+            raise ValueError("嵌入缓存必须为 N x 8 数组")
+        if not np.all(np.isfinite(embeddings)):
+            raise ValueError("嵌入缓存包含 NaN 或 Inf")
+
         if not cmds.attributeQuery(self.EMBEDDING_ATTR, node=self.triangulate_name, exists=True):
             cmds.addAttr(self.triangulate_name, ln=self.EMBEDDING_ATTR, dt="doubleArray")
+        if not cmds.attributeQuery("wcs_embedding_fingerprint",
+                                   node=self.triangulate_name, exists=True):
+            cmds.addAttr(self.triangulate_name, ln="wcs_embedding_fingerprint", dt="string")
+
+        # 先写数据，最后写指纹；中途失败时旧指纹不会错误地认证新数据。
         cmds.setAttr(self.triangulate_name + "." + self.EMBEDDING_ATTR,
                      embeddings.reshape(-1).tolist(), type="doubleArray")
+        cmds.setAttr(self.triangulate_name + ".wcs_embedding_fingerprint",
+                     fingerprint, type="string")
 
     # ==================== 双空间 ====================
 
@@ -219,6 +260,8 @@ class RestPoseSurface(object):
         jnt 的 wct_mesh 必须和 self.mesh_name 一致。
         无 wct_* 或 mesh 不一致 → None。
         """
+        if not cmds.objExists(jnt):
+            return None
         if not cmds.attributeQuery('wct_id0', node=jnt, exists=True):
             return None
         try:
@@ -234,7 +277,9 @@ class RestPoseSurface(object):
         except Exception:
             return None
         n = self.core.vtx_count
-        if max(id0, id1, id2) >= n:
+        if min(id0, id1, id2) < 0 or max(id0, id1, id2) >= n:
+            return None
+        if not np.all(np.isfinite((u, v, w))):
             return None
         return self.get_rest_position((id0, id1, id2), (u, v, w))
                                
