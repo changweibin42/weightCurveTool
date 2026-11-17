@@ -112,16 +112,6 @@ def _get_np_weights(fn_skin, shape_dag, indexes):
     return np.array(weights, dtype=float).reshape(n_verts, len(indexes))
 
 
-def _normal_weights(weights):
-    sums = np.sum(weights, axis=1)
-    weights[sums < 1e-5] = 1.0
-    weights /= np.sum(weights, axis=1, keepdims=True)
-    return weights
-
-
-# ============================================================================
-# 对外 API
-# ============================================================================
 
 def is_in_skin(mesh_name, jnt):
     """判断 jnt 是不是 mesh 的 skinCluster influence"""
