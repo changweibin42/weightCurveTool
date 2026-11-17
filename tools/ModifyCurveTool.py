@@ -29,7 +29,6 @@ from .DualCurveBuilder import DualCurveBuilder
 from .CurveBuildReuse import create_if_changed
 from .JointState import lock_joint, unlock_joint, lock_all_locs
 from .SurfaceBinder import (
-    _find_best_triangle,
     _ensure_bind_attrs,
     rebind_all_joints,
     infer_mesh_from_joint,
