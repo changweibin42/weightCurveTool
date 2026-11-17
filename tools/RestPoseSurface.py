@@ -44,9 +44,12 @@ class RestPoseSurface(object):
         self._ensure_triangulate()
         vertices, faces = self._get_triangulate_geo()
         fingerprint = self._embedding_fingerprint(vertices, faces)
+        log.info("[RestPoseSurface Cache] mesh={}, verts={}, faces={}, fingerprint={}".format(
+            self.mesh_name, len(vertices), len(faces), fingerprint[:12]))
 
         embeddings = self._read_cached_embedding(fingerprint, len(vertices))
         if embeddings is None:
+            log.info("[RestPoseSurface Cache] MISS -> rebuild embedding")
             log.info("[RestPoseSurface] {}: 计算测地距离 ({} verts)...".format(
                 self.mesh_name, len(vertices)))
             distances = get_fast_distance_matrix(vertices, faces)
@@ -110,21 +113,34 @@ class RestPoseSurface(object):
     def _read_cached_embedding(self, fingerprint, vertex_count):
         fingerprint_attr = self.triangulate_name + ".wcs_embedding_fingerprint"
         if not cmds.attributeQuery(self.EMBEDDING_ATTR, node=self.triangulate_name, exists=True):
+            log.info("[RestPoseSurface Cache] MISS: embedding attribute missing")
             return None
         if not cmds.attributeQuery("wcs_embedding_fingerprint",
                                    node=self.triangulate_name, exists=True):
             # 旧版本缓存没有几何指纹，不能证明与当前 Rest Pose 一致。
+            log.info("[RestPoseSurface Cache] MISS: legacy cache has no fingerprint")
             return None
         try:
             cached_fingerprint = cmds.getAttr(fingerprint_attr)
             if cached_fingerprint != fingerprint:
+                cached_short = str(cached_fingerprint)[:12] if cached_fingerprint else "<empty>"
+                log.info("[RestPoseSurface Cache] MISS: fingerprint mismatch cached={} current={}".format(
+                    cached_short, fingerprint[:12]))
                 return None
             raw = cmds.getAttr(self.triangulate_name + "." + self.EMBEDDING_ATTR)
             arr = np.asarray(raw, dtype=np.float64).reshape(-1, 8)
-            if arr.shape != (vertex_count, 8) or not np.all(np.isfinite(arr)):
+            if arr.shape != (vertex_count, 8):
+                log.info("[RestPoseSurface Cache] INVALID: shape={} expected=({}, 8)".format(
+                    arr.shape, vertex_count))
                 return None
+            if not np.all(np.isfinite(arr)):
+                log.info("[RestPoseSurface Cache] INVALID: embedding contains NaN/Inf")
+                return None
+            log.info("[RestPoseSurface Cache] HIT: embedding shape={}, fingerprint={}".format(
+                arr.shape, fingerprint[:12]))
             return arr
-        except Exception:
+        except Exception as exc:
+            log.warn("[RestPoseSurface Cache] INVALID: cache read failed: {}".format(exc))
             return None
 
     def _write_cached_embedding(self, embeddings, fingerprint):
@@ -145,6 +161,8 @@ class RestPoseSurface(object):
                      embeddings.reshape(-1).tolist(), type="doubleArray")
         cmds.setAttr(self.triangulate_name + ".wcs_embedding_fingerprint",
                      fingerprint, type="string")
+        log.info("[RestPoseSurface Cache] WRITE: embedding shape={}, fingerprint={}".format(
+            embeddings.shape, fingerprint[:12]))
 
     # ==================== 双空间 ====================
 
