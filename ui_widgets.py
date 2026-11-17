@@ -80,21 +80,7 @@ class WeightCurveWidget(QWidget):
         else:
             self.update()
 
-    def apply_mirror_to_x(self):
-        """仅对 X 强制镜像：p2.x = 1 - p1.x（保持 Y 不动）。"""
-        if not self.mirror_enabled:
-            return
-        x1 = self.points[1][0]
-        self.points[2][0] = 1.0 - x1
 
-    def apply_mirror_to_y(self):
-        """仅对 Y 强制镜像：p2.y = 1 - p1.y（保持 X 不动）。"""
-        if not self.mirror_enabled:
-            return
-        y1 = self.points[1][1]
-        self.points[2][1] = 1.0 - y1
-
-    # ─── 绘制 ────────────────────────────────────────────────
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
