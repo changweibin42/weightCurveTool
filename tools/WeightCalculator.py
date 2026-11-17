@@ -9,7 +9,7 @@ import numpy as np
 
 from .CurveRefine import (
     _unit,
-    fit_circle_3d as _fit_circle_3pts,
+    fit_circle_3d,
     _arc_tangent_unit,
     _segment_arc_params,
     _hermite_chain,
@@ -19,6 +19,11 @@ from time import perf_counter
 from ..Logger import log
 from .StrictCurveRegion import build_strict_region, weight_coordinates, _wct_shape
 from .LegacyBoundaryAlgorithms import LegacyBoundaryAlgorithmsMixin
+
+
+def _fit_circle_3pts(p1, p2, p3):
+    """兼容旧接口：三个点参数；底层复用 CurveRefine.fit_circle_3d。"""
+    return fit_circle_3d((p1, p2, p3))
 
 
 # ========================== V16.9 Bezier 权重工具 ==========================
