@@ -1,0 +1,11 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Maya 临时文件
+*.swp
+*.mll.bak
+.DS_Store
+Thumbs.db
