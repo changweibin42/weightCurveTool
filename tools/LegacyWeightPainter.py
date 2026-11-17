@@ -31,6 +31,10 @@ import numpy as np
 from ..Logger import log
 
 
+# 与 UI.LEGACY_MODES 保持一致的合法模式集合。
+MODES = ('soft', 'ik', 'spine', 'brow', 'belt', 'cloth', 'eye')
+
+
 from .ProjectionRegions import (
     _projection_ownership_mask,
     _projection_connected_band,
