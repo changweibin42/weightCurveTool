@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """WeightCalculator — V17.5.2 projection-style Bezier / unchanged strict range."""
 import hashlib
-from collections import deque, defaultdict
 
 import maya.cmds as cmds
 import maya.api.OpenMaya as om
@@ -10,15 +9,8 @@ import numpy as np
 from time import perf_counter
 
 from ..Logger import log
-from .SurfaceRegion import solve_surface_band, RegionError
 from .StrictCurveRegion import build_strict_region, weight_coordinates, _wct_shape
 from .LegacyBoundaryAlgorithms import LegacyBoundaryAlgorithmsMixin
-
-try:
-    from scipy.spatial import cKDTree
-    _HAS_SCIPY = True
-except ImportError:
-    _HAS_SCIPY = False
 
 
 # ========================== V16.9 Bezier 权重工具 ==========================
