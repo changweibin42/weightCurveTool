@@ -181,25 +181,6 @@ def _split_weights(wx_matrix, max_weights, xs, ys, r):
 
 
 
-def _cloth_weights(wx_matrix, max_weights, xs, ys, r):
-    joint_len = len(wx_matrix)
-    vtx_len = len(wx_matrix[0]) if joint_len else 0
-    out = [0.0] * (joint_len * vtx_len)
-    for vtx in range(vtx_len):
-        total = 0.0
-        for j in range(joint_len):
-            w = get_weight(wx_matrix[j][vtx] / r, xs, ys)
-            out[vtx * joint_len + j] = w
-            total += w
-        if total < 1e-5:
-            if joint_len:
-                for j in range(joint_len):
-                    out[vtx * joint_len + j] = 1.0 / joint_len
-            total = 1.0
-        scale = max_weights[vtx] / total
-        for j in range(joint_len):
-            out[vtx * joint_len + j] *= scale
-    return out
 
 
 
