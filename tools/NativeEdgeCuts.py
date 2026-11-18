@@ -5,13 +5,14 @@ Explicit environment overrides remain authoritative. Missing/older plugins
 and failed native queries retain the original Python fallback.
 """
 import os
-import hashlib
 import json
 from collections import OrderedDict
 import maya.api.OpenMaya as om
 from time import perf_counter
 import numpy as np
 import maya.cmds as cmds
+
+from .CacheFingerprint import fingerprint
 
 try:
     from .NativeQueryReuse import mode_if_enabled as _query_reuse_mode
@@ -166,7 +167,7 @@ def _trace_fields(previous,current):
     changed=[]
     for name,value in current.items():
         old=previous.get(name)
-        if old is not None and _hash([old])==_hash([value]):continue
+        if old is not None and fingerprint([old], sort_keys=True)==fingerprint([value], sort_keys=True):continue
         entry={'field':name}
         if isinstance(value,np.ndarray) and isinstance(old,np.ndarray):
             entry['shape_before']=list(old.shape);entry['shape_after']=list(value.shape)
@@ -221,19 +222,6 @@ def _trace_fingerprints(region,common_fields,curve_fields,keys):
     region['field_native_cache_trace_seconds']=perf_counter()-started
 
 
-def _hash(parts):
-    h=hashlib.blake2b(digest_size=32)
-    for part in parts:
-        if isinstance(part,np.ndarray):
-            value=np.ascontiguousarray(part)
-            h.update(str((value.shape,value.dtype.str)).encode('ascii'))
-            h.update(value.tobytes())
-        else:
-            h.update(json.dumps(part,sort_keys=True,allow_nan=False).encode('utf-8'))
-        h.update(b'\0')
-    return h.digest()
-
-
 def _fingerprints(region,mesh_name,eps):
     shape=_shape(mesh_name,'mesh');sel=om.MSelectionList();sel.add(shape);dag=sel.getDagPath(0)
     fn=om.MFnMesh(dag);matrix=dag.inclusiveMatrix()
@@ -251,9 +239,9 @@ def _fingerprints(region,mesh_name,eps):
     mesh_uuid=cmds.ls(shape,uuid=True)
     modes=tuple(os.environ.get(k,'0') for k in _MODE_KEYS)+(str(_query_reuse_mode()),)
     # Preserve the exact original digest sequence and bytes.
-    common=_hash([shape,mesh_uuid,float(eps),float(region['median']),4,modes,
+    common=fingerprint([shape,mesh_uuid,float(eps),float(region['median']),4,modes,
                   object_points,world_points,mesh_matrix,counts,connects,
-                  tri_counts,tri_vertices,normals,normal_counts,normal_ids,edges])
+                  tri_counts,tri_vertices,normals,normal_counts,normal_ids,edges], sort_keys=True)
     common_fields=dict(mesh_shape=shape,mesh_uuid=mesh_uuid,epsilon=float(eps),
                        median=float(region['median']),query_modes=modes,
                        mesh_object_points=object_points,mesh_world_points=world_points,
@@ -272,8 +260,8 @@ def _fingerprints(region,mesh_name,eps):
         curve_matrix=np.asarray([[curve_matrix.getElement(i,j) for j in range(4)] for i in range(4)])
         curve_uuid=cmds.ls(curve_shape,uuid=True)
         knots=np.asarray(curve.knots(),dtype=np.float64)
-        keys.append((common,ci,_hash([curve_shape,curve_uuid,
-                    (curve.degree,curve.form),cvs,object_cvs,curve_matrix,knots,samples])))
+        keys.append((common,ci,fingerprint([curve_shape,curve_uuid,
+                    (curve.degree,curve.form),cvs,object_cvs,curve_matrix,knots,samples], sort_keys=True)))
         curve_fields.append(dict(curve_shape=curve_shape,curve_uuid=curve_uuid,
             degree_form=(curve.degree,curve.form),world_cvs=cvs,object_cvs=object_cvs,
             curve_matrix=curve_matrix,knots=knots,

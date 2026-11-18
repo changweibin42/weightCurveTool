@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """V17.8.16: exact mesh graph and topology-ring reuse, never region reuse."""
 import os
-import hashlib
-import json
 from collections import OrderedDict
 from time import perf_counter
 from types import MappingProxyType
 import numpy as np
 import maya.cmds as cmds
+
+from .CacheFingerprint import fingerprint
 import maya.api.OpenMaya as om
 
 _CACHE=OrderedDict()
@@ -18,24 +18,13 @@ def clear_cache():
     _CACHE.clear()
 
 
-def _hash(parts):
-    h=hashlib.blake2b(digest_size=32)
-    for part in parts:
-        if isinstance(part,np.ndarray):
-            value=np.ascontiguousarray(part)
-            h.update(str((value.shape,value.dtype.str)).encode('ascii'));h.update(value.tobytes())
-        else:h.update(json.dumps(part,allow_nan=False).encode('utf-8'))
-        h.update(b'\0')
-    return h.digest()
-
-
 def _snapshot(path,mesh,points):
     name=path.fullPathName();matrix=path.inclusiveMatrix()
     counts,vertices=mesh.getVertices();tc,tv=mesh.getTriangles()
     counts=np.asarray(counts,dtype=np.int64);vertices=np.asarray(vertices,dtype=np.int64)
     # Include edge IDs/order: shortest-path ties depend on insertion order.
     edges=np.asarray([mesh.getEdgeVertices(i) for i in range(int(mesh.numEdges))],dtype=np.int64)
-    key=_hash([name,cmds.ls(name,uuid=True),
+    key=fingerprint([name,cmds.ls(name,uuid=True),
         np.asarray([(p.x,p.y,p.z,p.w) for p in points],dtype=np.float64),
         np.asarray([(p.x,p.y,p.z,p.w) for p in mesh.getPoints(om.MSpace.kObject)],dtype=np.float64),
         np.asarray([[matrix.getElement(i,j) for j in range(4)] for i in range(4)],dtype=np.float64),

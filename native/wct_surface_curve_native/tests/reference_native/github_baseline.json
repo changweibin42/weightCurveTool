@@ -5,12 +5,23 @@
   "plugin_version": "1.8.2",
   "node_id": "0x00142A04",
   "changed_runtime_files": [
+    "__main__.py",
+    "launcher.py",
+    "tools/BoundaryQueryCache.py",
+    "tools/CurveSurfaceSamples.py",
+    "tools/GroupManager.py",
+    "tools/LegacyBoundaryAlgorithms.py",
+    "tools/MayaSelectors.py",
+    "tools/MeshRegionCache.py",
+    "tools/ModifyCurveTool.py",
+    "tools/NativeEdgeCuts.py",
     "tools/RestPoseSurface.py",
-    "tools/NativeEdgeCuts.py"
+    "tools/SurfaceSlideBuilder.py"
   ],
   "added_runtime_files": [
     "tools/NativeProjection.py",
-    "tools/NativeQueryReuse.py"
+    "tools/NativeQueryReuse.py",
+    "tools/CacheFingerprint.py"
   ],
   "baseline_runtime_sha256": {
     "Logger.py": "25f93cf002a0711aad88061c8950af70ff7f1c7453b1fba2a79cccb21839207f",

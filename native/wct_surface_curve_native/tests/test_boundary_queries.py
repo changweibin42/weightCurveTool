@@ -1,4 +1,4 @@
-import ast,os,json,hashlib,contextlib,io
+import ast,os,contextlib,io
 from pathlib import Path
 from collections import OrderedDict
 from types import SimpleNamespace
@@ -7,7 +7,7 @@ from unittest.mock import patch
 import unittest
 import numpy as np
 import synthetic_curve_scenes as scenes
-from test_mesh_cache import Point,load as load_mesh
+from test_mesh_cache import Point,fingerprint,load as load_mesh
 ROOT=Path(__file__).resolve().parents[1]
 class Dag:
  def __init__(self,name='curve'):self.name=name;self.matrix=np.eye(4)
@@ -15,7 +15,7 @@ class Dag:
  def inclusiveMatrix(self):return SimpleNamespace(getElement=lambda i,j:self.matrix[i,j])
 def load():
  path=ROOT.parents[1]/'tools/BoundaryQueryCache.py';tree=ast.parse(path.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
- ns=dict(__name__="unit_no_package",__package__="",os=os,json=json,hashlib=hashlib,OrderedDict=OrderedDict,perf_counter=perf_counter,np=np,cmds=SimpleNamespace(ls=lambda name,**kw:[name+'uuid']),om=SimpleNamespace(MSpace=SimpleNamespace(kWorld=0,kObject=1)))
+ ns=dict(__name__="unit_no_package",__package__="",os=os,fingerprint=fingerprint,OrderedDict=OrderedDict,perf_counter=perf_counter,np=np,cmds=SimpleNamespace(ls=lambda name,**kw:[name+'uuid']),om=SimpleNamespace(MSpace=SimpleNamespace(kWorld=0,kObject=1)))
  exec(compile(tree,str(path),'exec'),ns);return ns
 class QueryCacheTests(unittest.TestCase):
  def setUp(self):

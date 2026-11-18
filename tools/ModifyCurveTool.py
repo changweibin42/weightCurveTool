@@ -31,10 +31,10 @@ from .JointState import lock_joint, unlock_joint, lock_all_locs
 from .SurfaceBinder import (
     _ensure_bind_attrs,
     rebind_all_joints,
-    infer_mesh_from_joint,
+    _set_pos_lock,
 )
 from .WeightColorPipeline import update_combined_vertex_colors
-from .MayaSelectors import find_main_locs, _loc_sort_key
+from .MayaSelectors import curve_prefix, find_main_locs, _loc_sort_key
 from .NativeCurvePreview import NativeCurvePreview, FrozenMapping
 
 
@@ -93,18 +93,6 @@ def _get_joint_display_scale():
         return 1.0
 
 
-def _set_pos_lock(jnt, lock):
-    keyable = not lock
-    for a in ('tx', 'ty', 'tz'):
-        try:
-            cmds.setAttr(f"{jnt}.{a}",
-                         lock=bool(lock),
-                         keyable=keyable,
-                         channelBox=keyable)
-        except Exception:
-            pass
-
-
 def _write_bind_attrs(jnt, mesh_name, ids, u, v, w):
     """写 jnt 的 7 个 wct_* 属性。"""
     values=dict(wct_mesh=mesh_name,wct_id0=int(ids[0]),wct_id1=int(ids[1]),
@@ -136,8 +124,6 @@ class ModifyCurveTool(object):
         self._picked = False
         self._jnt = None
         self._p0_world = None
-        self._drag_offset_cam = None
-        self._plane_center = None
         self._jnts = None
         self._kind = None
         self._mesh_name = None
@@ -254,8 +240,6 @@ class ModifyCurveTool(object):
         self._picked = False
         self._jnt = None
         self._p0_world = None
-        self._drag_offset_cam = None
-        self._plane_center = None
         self._jnts = None
         self._kind = None
         self._mesh_name = None
@@ -301,11 +285,6 @@ class ModifyCurveTool(object):
             return False
         return closed
 
-    def _curve_prefix(self, mesh_name, kind):
-        if kind == 'main':
-            return mesh_name
-        return f"{mesh_name}_{kind}"
-
     def _rebind_and_rebuild_all(self):
         log.info("=" * 60)
         log.info("重贴所有 loc 到 mesh 表面...")
@@ -335,7 +314,7 @@ class ModifyCurveTool(object):
             if len(jnts) < 2:
                 continue
             jnts = sorted(jnts, key=_loc_sort_key)
-            prefix = self._curve_prefix(mesh_name, kind)
+            prefix = curve_prefix(mesh_name, kind)
             try:
                 create_if_changed(builder, mesh_name, jnts, closed, prefix)
                 self.ctx.group_mgr.move_curves_to_active(mesh_name, kind=kind)
@@ -344,38 +323,6 @@ class ModifyCurveTool(object):
                 log.warn(f"重建 {kind} 曲线失败: {e}")
 
         log.info("=" * 60)
-
-    def _screen_to_world_plane(self, vp_x, vp_y, plane_center):
-        try:
-            view = omui.M3dView.active3dView()
-            pos = om.MPoint(); direction = om.MVector()
-            view.viewToWorld(int(vp_x), int(vp_y), pos, direction)
-
-            ray_origin = np.array([pos.x, pos.y, pos.z], dtype=float)
-            ray_dir = np.array([direction.x, direction.y, direction.z], dtype=float)
-            ln = np.linalg.norm(ray_dir)
-            if ln < 1e-10:
-                return None
-            ray_dir = ray_dir / ln
-
-            cam_dag = view.getCamera()
-            m = cam_dag.inclusiveMatrix()
-            cam_fwd = -np.array([float(m[8]), float(m[9]), float(m[10])],
-                                dtype=float)
-            ln2 = np.linalg.norm(cam_fwd)
-            if ln2 < 1e-10:
-                return None
-            cam_fwd = cam_fwd / ln2
-
-            plane_center = np.asarray(plane_center, dtype=float)
-            denom = float(np.dot(ray_dir, cam_fwd))
-            if abs(denom) < 1e-9:
-                return None
-            t = float(np.dot(plane_center - ray_origin, cam_fwd)) / denom
-            return ray_origin + ray_dir * t
-        except Exception as e:
-            log.warn(f"屏幕→世界平面失败: {e}")
-            return None
 
     @staticmethod
     def _screen_ray(vpX,vpY):
@@ -486,8 +433,6 @@ class ModifyCurveTool(object):
 
         p0 = np.array(cmds.xform(jnt, q=True, ws=True, t=True))
         self._p0_world = p0
-        self._plane_center = None
-        self._drag_offset_cam = None
 
         self._undo_open = False
         self._picked = True
@@ -564,8 +509,6 @@ class ModifyCurveTool(object):
         self._picked = False
         self._jnt = None
         self._p0_world = None
-        self._drag_offset_cam = None
-        self._plane_center = None
         self._deformed_fn = None
         self._deformed_pts = None
         self._clear_drag_surface()
@@ -635,7 +578,7 @@ class ModifyCurveTool(object):
             if len(jnts_iter) < 2:
                 continue
             jnts_iter = sorted(jnts_iter, key=_loc_sort_key)
-            prefix = self._curve_prefix(mesh_name, kind_iter)
+            prefix = curve_prefix(mesh_name, kind_iter)
             try:
                 curve, reused = create_if_changed(
                     builder, mesh_name, jnts_iter, closed, prefix)

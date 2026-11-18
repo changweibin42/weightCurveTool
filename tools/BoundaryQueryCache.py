@@ -5,12 +5,12 @@ Only uncalibrated raw scalar/None values are stored. References, signs, masks,
 holes, connected components and weights are never cached here.
 """
 import os
-import hashlib
-import json
 from collections import OrderedDict
 from time import perf_counter
 import numpy as np
 import maya.cmds as cmds
+
+from .CacheFingerprint import fingerprint
 import maya.api.OpenMaya as om
 
 try:
@@ -27,22 +27,11 @@ def clear_cache():
     _CACHE.clear()
 
 
-def _hash(parts):
-    h=hashlib.blake2b(digest_size=32)
-    for part in parts:
-        if isinstance(part,np.ndarray):
-            value=np.ascontiguousarray(part)
-            h.update(str((value.shape,value.dtype.str)).encode('ascii'));h.update(value.tobytes())
-        else:h.update(json.dumps(part,allow_nan=False).encode('utf-8'))
-        h.update(b'\0')
-    return h.digest()
-
-
 def _curve_key(common,path,curve):
     name=path.fullPathName();matrix=path.inclusiveMatrix()
     def cvs(space):
         return np.asarray([(p.x,p.y,p.z,p.w) for p in curve.cvPositions(space)],dtype=np.float64)
-    return (common,_hash([name,cmds.ls(name,uuid=True),(curve.degree,curve.form),
+    return (common,fingerprint([name,cmds.ls(name,uuid=True),(curve.degree,curve.form),
         cvs(om.MSpace.kObject),cvs(om.MSpace.kWorld),
         np.asarray(curve.knots(),dtype=np.float64),
         np.asarray([[matrix.getElement(i,j) for j in range(4)] for i in range(4)],dtype=np.float64)]))
@@ -130,7 +119,7 @@ def prepare_queries(mesh,points,graph,tolerance,rings,mesh_name=None):
             counts,ids=mesh.getNormalIds()
             # Mesh graph signature includes complete geometry/edge order.
             # Add all normals and corner mappings; normal edits must invalidate.
-            common=_hash([1,geometry_key.hex(),float(tolerance),int(rings),
+            common=fingerprint([1,geometry_key.hex(),float(tolerance),int(rings),
                 np.asarray([(p.x,p.y,p.z,p.w) for p in points],dtype=np.float64),
                 np.asarray([(n.x,n.y,n.z) for n in normals],dtype=np.float64),
                 np.asarray([(n.x,n.y,n.z) for n in object_normals],dtype=np.float64),

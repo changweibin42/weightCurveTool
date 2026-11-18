@@ -10,7 +10,7 @@ except ImportError:
     cKDTree = None
 
 from ..Logger import log
-from .CurveRefine import refine_points_along_surface, create_periodic_curve
+from .CurveRefine import create_periodic_curve
 from . import ColorScheme
 
 
