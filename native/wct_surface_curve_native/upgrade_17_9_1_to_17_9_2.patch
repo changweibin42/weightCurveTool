@@ -1,0 +1,109 @@
+--- a/tools/NativeEdgeCuts.py
++++ b/tools/NativeEdgeCuts.py
+@@ -13,6 +13,12 @@
+ import numpy as np
+ import maya.cmds as cmds
+ 
++try:
++    from .NativeQueryReuse import mode_if_enabled as _query_reuse_mode
++except ImportError:
++    def _query_reuse_mode():
++        return 0
++
+ def _shape(name,kind):
+     matches=cmds.ls(name,long=True) or []
+     if len(matches)!=1:
+@@ -25,7 +31,7 @@
+         name=matches[0]
+     return name
+ 
+-def _batch(region, mesh_name, eps, mask=7, partial=False):
++def _batch(region, mesh_name, eps, mask=7, partial=False, query_reuse=None):
+     edges=[(a,b,float(length)) for a,neighbors in enumerate(region['graph'])
+            for b,length in neighbors.items() if b>a]
+     chunks=[('2 {} {} {}'.format(len(region['points']),len(edges),mask) if partial else '1 {} {}'.format(len(region['points']),len(edges)))]
+@@ -35,9 +41,14 @@
+         chunks.append(str(len(samples)))
+         chunks.extend('{:.17g} {:.17g} {:.17g} {}'.format(float(p.x),float(p.y),float(p.z),int(face))
+                       for p,face,_ in samples)
+-    values=cmds.wctCurveEdgeCuts(_shape(mesh_name,'mesh'),
+-                                *[_shape(c,'nurbsCurve') for c in region['curves']],float(eps),
+-                                float(region['median']),4,' '.join(chunks))
++    reuse=_query_reuse_mode() if query_reuse is None else int(query_reuse)
++    if reuse not in (0,1):
++        raise ValueError('Query reuse must be 0 or 1')
++    arguments=(_shape(mesh_name,'mesh'),
++               *[_shape(c,'nurbsCurve') for c in region['curves']],float(eps),
++               float(region['median']),4,' '.join(chunks))
++    # Preserve the original eight-argument ABI when the new mode is disabled.
++    values=cmds.wctCurveEdgeCuts(*(arguments+(reuse,) if reuse else arguments))
+     records=np.asarray(values,dtype=float).reshape(-1,6)
+     if not np.all(np.isfinite(records)):
+         raise RuntimeError('Non-finite native result')
+@@ -238,7 +249,7 @@
+     tri_counts=np.asarray(tri_counts,dtype=np.int64);tri_vertices=np.asarray(tri_vertices,dtype=np.int64)
+     normal_counts=np.asarray(normal_counts,dtype=np.int64);normal_ids=np.asarray(normal_ids,dtype=np.int64)
+     mesh_uuid=cmds.ls(shape,uuid=True)
+-    modes=tuple(os.environ.get(k,'0') for k in _MODE_KEYS)
++    modes=tuple(os.environ.get(k,'0') for k in _MODE_KEYS)+(str(_query_reuse_mode()),)
+     # Preserve the exact original digest sequence and bytes.
+     common=_hash([shape,mesh_uuid,float(eps),float(region['median']),4,modes,
+                   object_points,world_points,mesh_matrix,counts,connects,
+--- /dev/null
++++ b/tools/NativeQueryReuse.py
+@@ -0,0 +1,55 @@
++# -*- coding: utf-8 -*-
++"""V17.9.2: enable per-command query reuse only after a binary-bound audit."""
++import json
++import os
++import maya.cmds as cmds
++from .NativeStrictQueries import binary_identity
++
++PREFERENCE = 'wct_native_query_reuse_audit_v1'
++MODE_KEYS = ('WCT_NATIVE_ACCEL_POINT', 'WCT_NATIVE_ACCEL_NORMAL',
++             'WCT_NATIVE_BVH_POINT', 'WCT_NATIVE_FACE_QUERY')
++
++
++def _profile():
++    return [os.environ.get(key, '0') for key in MODE_KEYS]
++
++
++def _supported(identity):
++    try:
++        return tuple(int(v) for v in identity['version'].split('.')[:3]) >= (1, 8, 2)
++    except (KeyError, TypeError, ValueError):
++        return False
++
++
++def mode_if_enabled():
++    if os.environ.get('WCT_NATIVE_QUERY_REUSE') == '0':
++        return 0
++    try:
++        identity = binary_identity()
++        if not _supported(identity):
++            return 0
++        # Temporary explicit access for the read-only comparison script only.
++        if os.environ.get('WCT_NATIVE_QUERY_REUSE_AUDIT') == '1':
++            return 1 if os.environ.get('WCT_NATIVE_QUERY_REUSE') == '1' else 0
++        if not cmds.optionVar(exists=PREFERENCE):
++            return 0
++        record = json.loads(cmds.optionVar(q=PREFERENCE))
++        if (record.get('schema') == 1 and record.get('binary') == identity
++                and record.get('profile') == _profile()):
++            return 1 if record.get('mode') == 1 else 0
++    except Exception:
++        pass
++    return 0
++
++
++def remember_audit():
++    identity = binary_identity()
++    if not _supported(identity):
++        raise RuntimeError('Query reuse requires wctSurfaceCurve 1.8.2 or newer')
++    record = dict(schema=1, binary=identity, profile=_profile(), mode=1)
++    cmds.optionVar(sv=(PREFERENCE, json.dumps(record, sort_keys=True)))
++
++
++def clear_audit():
++    if cmds.optionVar(exists=PREFERENCE):
++        cmds.optionVar(remove=PREFERENCE)
