@@ -24,6 +24,17 @@ git lfs ls-files
 - **拖动启动**：把仓库根目录的 `start_weight_curve_tool.py` 拖入 Maya 视口。
 - **Script Editor 启动**：在 Maya Script Editor 的 **Python** 页打开同一个文件，执行整份脚本。如果 Maya 弹出目录选择框，选择 `weightCurveTool` 文件夹或其上一级目录。
 
+### 详细日志
+
+默认只在 Script Editor 中输出警告和错误。排查问题时，可在 Maya 的 Python 页执行以下代码，立即打开详细日志。
+
+```python
+from weightCurveTool.Logger import log
+log.set_detailed(True)
+```
+
+排查完执行 `log.set_detailed(False)`。如需每次启动都打开详细日志，把 `Logger.py` 中的 `DETAILED_LOGS` 改为 `True`，然后重启 Maya。
+
 ## 仓库目录
 
 | 路径 | 内容 |

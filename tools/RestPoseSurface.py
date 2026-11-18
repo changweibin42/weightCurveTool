@@ -237,7 +237,7 @@ class RestPoseSurface(object):
             try:
                 result=backend(self.triangulate_name,arr)
             except Exception as e:
-                print('[WCT Native Projection] Python fallback: {}'.format(e))
+                log.info('[WCT Native Projection] Python fallback: {}'.format(e))
                 result=None
             if result is not None:return result
         try:
@@ -253,7 +253,6 @@ class RestPoseSurface(object):
                 out[i] = [c.x, c.y, c.z]
             return out
         except Exception as e:
-            from ..Logger import log
             log.warn("[RestPoseSurface] project_to_surface fallback to copy_data: {}".format(e))
             return self.copy_data(arr)  
             

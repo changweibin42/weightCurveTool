@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 """weightCurveTool 统一日志
 
-★ 只输出 ASCII 标签（[INFO] / [OK] / [WARN] / [ERR] / [DBG]），
-  在任何 stdout 编码（UTF-8 / GBK / 重定向文件）下都不会抛 UnicodeEncodeError。
+日志带有 [INFO] / [OK] / [WARN] / [ERR] / [DBG] 标签。
 
 级别（高 → 低过滤能力）：
     ERROR  仅错误
-    WARN   + 警告
+    WARN   + 警告（默认）
     OK     + 成功状态
-    INFO   + 一般流程信息（默认）
+    INFO   + 一般流程信息
     DEBUG  + 调试细节
     SILENT 全部静默
 
@@ -26,10 +25,13 @@
 
 全局开关：
     from weightCurveTool.Logger import log
-    log.set_level(log.DEBUG)     # 打开调试
-    log.set_level(log.WARN)      # 只留警告和错误
+    log.set_detailed(True)       # 打开详细日志
+    log.set_detailed(False)      # 只留警告和错误
     log.set_level(log.SILENT)    # 静默
 """
+
+
+DETAILED_LOGS = False
 
 
 class _Logger(object):
@@ -50,7 +52,8 @@ class _Logger(object):
     }
 
     def __init__(self, level=None):
-        self._level = self.INFO if level is None else int(level)
+        default = self.DEBUG if DETAILED_LOGS else self.WARN
+        self._level = default if level is None else int(level)
 
     # ---- 全局开关 ----
     def set_level(self, level):
@@ -58,6 +61,12 @@ class _Logger(object):
 
     def get_level(self):
         return self._level
+
+    def set_detailed(self, enabled):
+        self.set_level(self.DEBUG if enabled else self.WARN)
+
+    def details_enabled(self):
+        return self._level <= self.INFO
 
     # ---- 各级别入口 ----
     def debug(self, msg):
@@ -87,3 +96,40 @@ class _Logger(object):
 
 
 log = _Logger()
+
+_NATIVE_INFO_PREFIXES = (
+    "[WCT Native Query]",
+    "[WCT Native Strict]",
+    "[WCT Native Project]",
+)
+
+
+def run_native_command(command, *args):
+    """Hide this tool's native timing lines for one synchronous Maya command."""
+    if log.details_enabled():
+        return command(*args)
+
+    from maya.api import OpenMaya as om
+
+    active = True
+
+    def filter_timing(message, message_type, _):
+        return (
+            active
+            and message_type == om.MCommandMessage.kInfo
+            and message.lstrip("#/ \t").startswith(_NATIVE_INFO_PREFIXES)
+        )
+
+    try:
+        callback = om.MCommandMessage.addCommandOutputFilterCallback(filter_timing)
+    except (AttributeError, RuntimeError):
+        # Keep the original command available if this Maya version cannot filter.
+        return command(*args)
+    try:
+        return command(*args)
+    finally:
+        active = False
+        try:
+            om.MMessage.removeCallback(callback)
+        except RuntimeError:
+            log.debug("无法移除已停用的原生日志过滤回调")

@@ -10,6 +10,8 @@ from time import perf_counter
 import numpy as np
 import maya.cmds as cmds
 
+from ..Logger import log
+
 from .CacheFingerprint import fingerprint
 import maya.api.OpenMaya as om
 
@@ -79,7 +81,7 @@ class QuerySession:
         key=None
         if self.common is not None:
             try:key=_curve_key(self.common,path,curve)
-            except Exception as exc:print('[WCT BoundaryQueryCache V17.9.0] curve uncached: '+str(exc))
+            except Exception as exc:log.info('[WCT BoundaryQueryCache V17.9.0] curve uncached: '+str(exc))
         shared=_CACHE.get(key,{}) if key is not None else {}
         values=_Values(shared);probe=_Probe()
         self.rows.append((label,key,values,probe))
@@ -99,7 +101,7 @@ class QuerySession:
             reused,computed=len(values.used),len(values.computed)
             if key is not None:
                 _CACHE[key]=dict(values);_CACHE.move_to_end(key)
-            print('[WCT BoundaryQueries V17.9.0] {} reused={} computed={} curve={:.4f}s/{} mesh={:.4f}s/{} normal={:.4f}s/{} tangent={:.4f}s/{} native={}/{:.4f}s'.format(
+            log.info('[WCT BoundaryQueries V17.9.0] {} reused={} computed={} curve={:.4f}s/{} mesh={:.4f}s/{} normal={:.4f}s/{} tangent={:.4f}s/{} native={}/{:.4f}s'.format(
                 label,reused,computed,
                 probe.seconds.get('curve',0.),probe.calls.get('curve',0),
                 probe.seconds.get('mesh',0.),probe.calls.get('mesh',0),
@@ -124,7 +126,7 @@ def prepare_queries(mesh,points,graph,tolerance,rings,mesh_name=None):
                 np.asarray([(n.x,n.y,n.z) for n in normals],dtype=np.float64),
                 np.asarray([(n.x,n.y,n.z) for n in object_normals],dtype=np.float64),
                 np.asarray(counts,dtype=np.int64),np.asarray(ids,dtype=np.int64)])
-        except Exception as exc:print('[WCT BoundaryQueryCache V17.9.0] mesh uncached: '+str(exc))
-    print('[WCT BoundaryQueryCache V17.9.0] {} prepare={:.4f}s'.format(
+        except Exception as exc:log.info('[WCT BoundaryQueryCache V17.9.0] mesh uncached: '+str(exc))
+    log.info('[WCT BoundaryQueryCache V17.9.0] {} prepare={:.4f}s'.format(
         'enabled' if common is not None else 'timing-only',perf_counter()-started))
     return QuerySession(mesh,common,graph,mesh_name,tolerance,rings)

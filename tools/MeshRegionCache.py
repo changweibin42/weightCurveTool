@@ -7,6 +7,8 @@ from types import MappingProxyType
 import numpy as np
 import maya.cmds as cmds
 
+from ..Logger import log
+
 from .CacheFingerprint import fingerprint
 import maya.api.OpenMaya as om
 
@@ -81,7 +83,7 @@ def prepare_region_mesh(path,mesh,points,compute):
     started=perf_counter()
     try:key,polygons=_snapshot(path,mesh,points)
     except Exception as exc:
-        print('[WCT MeshCache V17.8.16] uncached: '+str(exc))
+        log.info('[WCT MeshCache V17.8.16] uncached: '+str(exc))
         graph,median=compute();return mesh,graph,median
     entry=_CACHE.get(key);reused=entry is not None
     if entry is None:
@@ -92,5 +94,5 @@ def prepare_region_mesh(path,mesh,points,compute):
     _CACHE.move_to_end(key)
     while len(_CACHE)>_LIMIT:_CACHE.popitem(last=False)
     graph=_RegionGraph(entry['rows'],entry)
-    print('[WCT MeshCache V17.8.16] {} prepare={:.4f}s'.format('hit' if reused else 'miss',perf_counter()-started))
+    log.info('[WCT MeshCache V17.8.16] {} prepare={:.4f}s'.format('hit' if reused else 'miss',perf_counter()-started))
     return _MeshView(mesh,entry['polygons']),graph,entry['median']

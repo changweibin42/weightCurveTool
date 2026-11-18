@@ -7,6 +7,8 @@ from collections import OrderedDict
 import numpy as np
 import maya.cmds as cmds
 
+from ..Logger import log, run_native_command
+
 PREFERENCE='wctStrictQueriesAuditV1'
 _IDENTITY=None
 _PAYLOADS=OrderedDict()
@@ -71,13 +73,13 @@ def compute_if_enabled(mesh_name,curve_name,vertices,eps,rings,graph):
     try:
         mode=validated_mode()
         if mode is None:
-            if _NOTICE!='python':
-                print('[WCT Native Strict Backend] Python path; native disabled or this binary has not passed its audit')
+            if log.details_enabled() and _NOTICE!='python':
+                log.info('[WCT Native Strict Backend] Python path; native disabled or this binary has not passed its audit')
                 _NOTICE='python'
             return None
         requested=sorted(set(map(int,vertices)))
         if not requested:return {}
-        values=cmds.wctStrictBoundaryQueries(mesh_name,curve_name,float(eps),int(rings),mode,_payload(graph,requested))
+        values=run_native_command(cmds.wctStrictBoundaryQueries, mesh_name,curve_name,float(eps),int(rings),mode,_payload(graph,requested))
         values=np.asarray(values,dtype=float)
         if values.size%3 or not np.all(np.isfinite(values)):raise RuntimeError('Invalid native strict result')
         records=values.reshape(-1,3)
@@ -89,10 +91,10 @@ def compute_if_enabled(mesh_name,curve_name,vertices,eps,rings,graph):
                 raise RuntimeError('Invalid native strict vertex record')
             result[int(vertex)]=float(value) if valid else None
         if set(result)!=wanted:raise RuntimeError('Incomplete native strict result')
-        if _NOTICE!=mode:
-            print('[WCT Native Strict Backend] enabled mode={}'.format(mode));_NOTICE=mode
+        if log.details_enabled() and _NOTICE!=mode:
+            log.info('[WCT Native Strict Backend] enabled mode={}'.format(mode));_NOTICE=mode
         return result
     except Exception as exc:
         notice=str(exc)
-        if _NOTICE!=notice:print('[WCT Native Strict Backend] Python fallback: '+notice);_NOTICE=notice
+        if log.details_enabled() and _NOTICE!=notice:log.info('[WCT Native Strict Backend] Python fallback: '+notice);_NOTICE=notice
         return None

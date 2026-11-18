@@ -1362,8 +1362,10 @@ def paint(mode, mesh_name=None, xs=None, ys=None, r=1.0, target_joint=None, rang
             log.warn(f"[Legacy] {mode} 未写入（内部校验未通过，详见上方日志）")
             return False
     except Exception as e:
-        import traceback
-        log.error(f"[Legacy] {mode} 失败: {e}\n{traceback.format_exc()}")
+        log.error(f"[Legacy] {mode} 失败: {e}")
+        if log.details_enabled():
+            import traceback
+            log.debug(traceback.format_exc())
         return False
     finally:
         cmds.undoInfo(closeChunk=True)

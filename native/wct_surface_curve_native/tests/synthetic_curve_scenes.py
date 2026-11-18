@@ -4,12 +4,14 @@ from collections import Counter, deque
 import heapq
 import math
 from pathlib import Path
+from runpy import run_path
 from types import SimpleNamespace
 
 import numpy as np
 
 
 TOOLS = Path(__file__).resolve().parents[3] / 'tools'
+LOG = run_path(str(TOOLS.parent / 'Logger.py'))['log']
 
 
 class V:
@@ -86,7 +88,7 @@ def region_ns(scene):
         if isinstance(node, ast.FunctionDef) and node.name != '_wct_shape'
     ]
     namespace = dict(
-        np=np, math=math, heapq=heapq, deque=deque, Counter=Counter,
+        log=LOG, np=np, math=math, heapq=heapq, deque=deque, Counter=Counter,
         om=scene.om, _wct_shape=lambda name, kind: name,
         STRICT_EPS_FACTOR=1e-7, REFINE_RINGS=3, SAMPLE_SPACING=.2,
     )

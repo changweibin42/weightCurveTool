@@ -18,7 +18,7 @@ class Dag:
  def inclusiveMatrix(self):return SimpleNamespace(getElement=lambda i,j:self.matrix[i,j])
 def load():
  path=ROOT.parents[1]/'tools/MeshRegionCache.py';tree=ast.parse(path.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
- ns=dict(os=os,fingerprint=fingerprint,OrderedDict=OrderedDict,MappingProxyType=MappingProxyType,np=np,perf_counter=perf_counter,cmds=SimpleNamespace(ls=lambda *a,**kw:['uuid']),om=SimpleNamespace(MSpace=SimpleNamespace(kObject=0)))
+ ns=dict(log=scenes.LOG,os=os,fingerprint=fingerprint,OrderedDict=OrderedDict,MappingProxyType=MappingProxyType,np=np,perf_counter=perf_counter,cmds=SimpleNamespace(ls=lambda *a,**kw:['uuid']),om=SimpleNamespace(MSpace=SimpleNamespace(kObject=0)))
  exec(compile(tree,str(path),'exec'),ns);return ns
 class MeshCacheTests(unittest.TestCase):
  def setUp(self):

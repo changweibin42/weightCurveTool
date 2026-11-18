@@ -4,6 +4,8 @@ import os
 import json
 import numpy as np
 import maya.cmds as cmds
+
+from ..Logger import log, run_native_command
 from . import NativeStrictQueries as StrictDriver
 
 PREFERENCE='wctProjectionAuditV1'
@@ -53,23 +55,23 @@ def compute_if_enabled(mesh_name,points):
     try:
         mode=validated_mode()
         if mode is None:
-            if _NOTICE!='python':
-                print('[WCT Native Projection] Python path; no enabled audit for this binary');_NOTICE='python'
+            if log.details_enabled() and _NOTICE!='python':
+                log.info('[WCT Native Projection] Python path; no enabled audit for this binary');_NOTICE='python'
             return None
         if not np.all(np.isfinite(arr)):raise RuntimeError('Non-finite projection input')
         payload='1 {}\n{}'.format(len(arr),'\n'.join('{:.17g} {:.17g} {:.17g}'.format(*row) for row in arr))
-        result=np.asarray(cmds.wctProjectPoints(mesh_name,mode,payload),dtype=float)
+        result=np.asarray(run_native_command(cmds.wctProjectPoints, mesh_name,mode,payload),dtype=float)
         if result.size%4 or not np.all(np.isfinite(result)):raise RuntimeError('Invalid projection result')
         rows=result.reshape(-1,4)
         if len(rows)!=len(arr)+1 or tuple(rows[-1])!=(-1.,1.,float(len(arr)),-2.):
             raise RuntimeError('Projection result protocol mismatch')
         faces=rows[:-1,3]
         if np.any(faces<0) or np.any(faces!=np.floor(faces)):raise RuntimeError('Invalid projection face')
-        if _NOTICE!=mode:print('[WCT Native Projection] enabled mode={}'.format(mode));_NOTICE=mode
+        if log.details_enabled() and _NOTICE!=mode:log.info('[WCT Native Projection] enabled mode={}'.format(mode));_NOTICE=mode
         _BATCHES+=1
         return rows[:-1,:3].copy()
     except Exception as exc:
         _FALLBACKS+=1
         notice=str(exc)
-        if _NOTICE!=notice:print('[WCT Native Projection] Python fallback: '+notice);_NOTICE=notice
+        if log.details_enabled() and _NOTICE!=notice:log.info('[WCT Native Projection] Python fallback: '+notice);_NOTICE=notice
         return None

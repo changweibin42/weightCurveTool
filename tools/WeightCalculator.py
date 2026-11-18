@@ -547,7 +547,7 @@ class WeightCalculator(LegacyBoundaryAlgorithmsMixin):
             self.last_boundary_fraction = normalized.copy()
             valid_mask = region['mask'] | outer
             weights = np.where(valid_mask, np.clip(normalized, 0.0, 1.0) * cap, 0.0)
-            if verbose:
+            if verbose and log.details_enabled():
                 for label, direction in (('FWD', 1), ('BWD', -1)):
                     ids = region['mask'] & (side == direction) & ~ridge
                     if np.any(ids):

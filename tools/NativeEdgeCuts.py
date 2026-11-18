@@ -12,6 +12,8 @@ from time import perf_counter
 import numpy as np
 import maya.cmds as cmds
 
+from ..Logger import log, run_native_command
+
 from .CacheFingerprint import fingerprint
 
 try:
@@ -49,7 +51,7 @@ def _batch(region, mesh_name, eps, mask=7, partial=False, query_reuse=None):
                *[_shape(c,'nurbsCurve') for c in region['curves']],float(eps),
                float(region['median']),4,' '.join(chunks))
     # Preserve the original eight-argument ABI when the new mode is disabled.
-    values=cmds.wctCurveEdgeCuts(*(arguments+(reuse,) if reuse else arguments))
+    values=run_native_command(cmds.wctCurveEdgeCuts, *(arguments+(reuse,) if reuse else arguments))
     records=np.asarray(values,dtype=float).reshape(-1,6)
     if not np.all(np.isfinite(records)):
         raise RuntimeError('Non-finite native result')
@@ -84,8 +86,8 @@ def _prepare_backend():
     enabled=os.environ.get('WCT_NATIVE_EDGE_CUTS')
     if enabled is not None and enabled!='1':
         message='disabled by WCT_NATIVE_EDGE_CUTS='+enabled
-        if _BACKEND_NOTICE!=message:
-            print('[WCT Native Backend V17.8.11] '+message)
+        if log.details_enabled() and _BACKEND_NOTICE!=message:
+            log.info('[WCT Native Backend V17.8.11] '+message)
             _BACKEND_NOTICE=message
         return False
     # Only load the binary shipped in this package, never an arbitrary copy
@@ -110,8 +112,8 @@ def _prepare_backend():
             raise RuntimeError('wctCurveEdgeCuts command is unavailable')
     except Exception as exc:
         message=str(exc)
-        if _BACKEND_NOTICE!=message:
-            print('[WCT Native Backend V17.8.11] Python fallback: '+message)
+        if log.details_enabled() and _BACKEND_NOTICE!=message:
+            log.info('[WCT Native Backend V17.8.11] Python fallback: '+message)
             _BACKEND_NOTICE=message
         return False
     # These are process-local defaults, recreated after a Maya restart.
@@ -122,8 +124,8 @@ def _prepare_backend():
                       ('WCT_NATIVE_FACE_QUERY','1'),
                       ('WCT_NATIVE_CURVE_CACHE','1')):
         os.environ.setdefault(key,value)
-    if _BACKEND_NOTICE!='native':
-        print('[WCT Native Backend V17.8.11] enabled; plugin='+text+
+    if log.details_enabled() and _BACKEND_NOTICE!='native':
+        log.info('[WCT Native Backend V17.8.11] enabled; plugin='+text+
               ' face_query='+os.environ['WCT_NATIVE_FACE_QUERY']+
               ' normal='+os.environ['WCT_NATIVE_ACCEL_NORMAL']+
               ' curve_cache='+os.environ['WCT_NATIVE_CURVE_CACHE'])
@@ -141,11 +143,11 @@ def compute_if_enabled(region, mesh_name, eps):
         cuts,endpoints,hits=_cached(region,mesh_name,eps)
         region['_native_endpoint_cache']=endpoints
         region['field_native_backend_used']=True
-        print('[WCT Native Cuts] batch={:.3f}s cut_edges={} reused_curves={} rebuilt_curves={}'.format(perf_counter()-started,len(cuts),hits,3-hits))
+        log.info('[WCT Native Cuts] batch={:.3f}s cut_edges={} reused_curves={} rebuilt_curves={}'.format(perf_counter()-started,len(cuts),hits,3-hits))
         return cuts
     except Exception as exc:
         # No weights were written by the command; original algorithm is safe.
-        print('[WCT Native Cuts] fallback to Python: {}'.format(exc))
+        log.info('[WCT Native Cuts] fallback to Python: {}'.format(exc))
         return None
 
 
@@ -188,7 +190,7 @@ def _trace_fields(previous,current):
 
 
 def _trace_fingerprints(region,common_fields,curve_fields,keys):
-    if os.environ.get('WCT_NATIVE_CACHE_TRACE','1')=='0':return
+    if not log.details_enabled() or os.environ.get('WCT_NATIVE_CACHE_TRACE','1')=='0':return
     started=perf_counter()
     # The builder deletes/recreates the moved curve, so its UUID changes.
     # Group diagnostic history by stable full DAG slots, then report UUID
@@ -207,11 +209,11 @@ def _trace_fingerprints(region,common_fields,curve_fields,keys):
     report=dict(version='17.8.13',common_changed=shared,curves=rows)
     region['field_native_cache_trace']=report
     if previous is None:
-        print('[WCT CacheTrace V17.8.13] cold: first observation of these mesh/curve paths')
+        log.info('[WCT CacheTrace V17.8.13] cold: first observation of these mesh/curve paths')
     if shared:
-        print('[WCT CacheTrace V17.8.13] common '+json.dumps(shared,ensure_ascii=True))
+        log.info('[WCT CacheTrace V17.8.13] common '+json.dumps(shared,ensure_ascii=True))
     for row in rows:
-        print('[WCT CacheTrace V17.8.13] '+json.dumps(row,ensure_ascii=True))
+        log.info('[WCT CacheTrace V17.8.13] '+json.dumps(row,ensure_ascii=True))
     # Snapshots belong only to diagnostics. Exact cache keys/records and
     # backend calculations never read these values.
     def snapshot(fields):
@@ -272,7 +274,7 @@ def _fingerprints(region,mesh_name,eps):
         _trace_fingerprints(region,common_fields,curve_fields,keys)
     except Exception as exc:
         # Diagnostics must never force a safe native solve onto Python.
-        print('[WCT CacheTrace V17.8.13] diagnostic unavailable: '+str(exc))
+        log.info('[WCT CacheTrace V17.8.13] diagnostic unavailable: '+str(exc))
     return keys
 
 

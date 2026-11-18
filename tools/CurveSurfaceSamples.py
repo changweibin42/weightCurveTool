@@ -10,6 +10,8 @@ from collections import OrderedDict
 import numpy as np
 import maya.cmds as cmds
 
+from ..Logger import log
+
 from .CacheFingerprint import fingerprint
 import maya.api.OpenMaya as om
 
@@ -53,13 +55,13 @@ def sample_if_unchanged(mesh_key,path,curve,compute):
     try:
         key=_key(mesh_key,path,curve)
     except Exception as exc:
-        print('[WCT SampleCache V17.8.14] uncached: '+str(exc))
+        log.info('[WCT SampleCache V17.8.14] uncached: '+str(exc))
         return compute()
     saved=_CACHE.get(key)
     if saved is not None:
         _CACHE.move_to_end(key)
         anchors,rows,offset=saved
-        print('[WCT SampleCache V17.8.14] hit '+path.fullPathName())
+        log.info('[WCT SampleCache V17.8.14] hit '+path.fullPathName())
         return (list(anchors),[(om.MPoint(x,y,z,w),face,param)
                 for x,y,z,w,face,param in rows],offset)
     # Never commit a failed/incomplete sampling operation.
@@ -70,5 +72,5 @@ def sample_if_unchanged(mesh_key,path,curve,compute):
     _CACHE[key]=(tuple(anchors),rows,float(offset))
     _CACHE.move_to_end(key)
     while len(_CACHE)>_LIMIT:_CACHE.popitem(last=False)
-    print('[WCT SampleCache V17.8.14] miss '+path.fullPathName())
+    log.info('[WCT SampleCache V17.8.14] miss '+path.fullPathName())
     return result
