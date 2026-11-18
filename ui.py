@@ -13,7 +13,6 @@ except ImportError:
 from . import core
 from .Logger import log
 from .ui_widgets import (
-    HoverButton,
     WeightCurveWidget,
     WeightParamGroupMulti,
     WeightParamGroup,
@@ -43,18 +42,16 @@ class WeightCurveEditorWindow(QWidget):
     TIP_SELECT_BONE = "点击读取当前 Maya 选中的 Joint 骨骼（要被刷权重的对象）。"
     TIP_APPLY_XS = "把左侧四个输入框的 Xs 值应用到上方贝塞尔曲线。"
     TIP_APPLY_YS = "把左侧四个输入框的 Ys 值应用到上方贝塞尔曲线。"
-    TIP_MIRROR = ("开启后贝塞尔手柄关于 (0.5, 0.5) 中心对称：\n"
-                  "拖动 p1 → p2 自动镜像为 (1-x1, 1-y1)；反之亦然。\n"
-                  "应用 Xs 时强制 p2.x = 1 - p1.x；应用 Ys 时强制 p2.y = 1 - p1.y。")
+    TIP_MIRROR = "勾选后拖动任一手柄，另一手柄会围绕曲线中心同步镜像。"
 
     LEGACY_MODES = [
-        ("次级", "soft"),
-        ("关节", "ik"),
-        ("脊椎", "spine"),
-        ("背带", "belt"),
-        ("眉毛", "brow"),
-        ("裙子", "cloth"),
-        ("眼皮", "eye"),
+        ("次级", "soft", "先选模型顶点作为软选中心，解锁 source，再拾取接收权重的骨骼。"),
+        ("关节", "ik", "拾取子关节，在指定范围内重新分配它与父关节的权重。"),
+        ("脊椎", "spine", "解锁组成单条链的蒙皮骨骼，再沿链分配权重。"),
+        ("背带", "belt", "拾取背带骨骼链的链头，再沿链分配权重。"),
+        ("眉毛", "brow", "拾取眉毛骨骼链的链头，再沿链分配权重。"),
+        ("裙子", "cloth", "拾取来源骨骼并解锁参与解算的裙子骨骼。"),
+        ("眼皮", "eye", "解锁参与解算的眼皮骨骼，按网格连通关系分配顶点。"),
     ]
 
     def __init__(self, parent=None):
@@ -67,6 +64,8 @@ class WeightCurveEditorWindow(QWidget):
 
         self._last_mesh = None
         self._current_status = ("", self.STATUS_INFO)
+        self._hover_hints = {}
+        self._active_hint = (None, "")
 
         self._repaint_timer = QTimer(self)
         self._repaint_timer.setSingleShot(True)
@@ -98,6 +97,7 @@ class WeightCurveEditorWindow(QWidget):
             "QScrollArea { border: none; background-color: rgb(43, 43, 43); }"
         )
         outer.addWidget(self._scroll)
+        self._watch_hint(self._scroll.verticalScrollBar(), "拖动滚动条，查看窗口内其余控件。")
 
         content = QWidget()
         content.setStyleSheet("background-color: rgb(43, 43, 43);")
@@ -110,15 +110,17 @@ class WeightCurveEditorWindow(QWidget):
         # 模型 / 骨骼
         self.model_group = WeightParamGroup(
             "模型", "", "选择", self.TIP_SELECT_MODEL)
-        self.model_group.set_hover_callbacks(
-            self._on_button_hover, self._on_button_leave)
+        self._watch_hint(self.model_group.btn, self.TIP_SELECT_MODEL)
+        for widget in (self.model_group.label, self.model_group.line_edit):
+            self._watch_hint(widget, "填写要处理的网格名称，或在视口选中模型后点「选择」。")
         self.model_group.on_clicked(lambda: self.on_select("模型"))
         main_layout.addLayout(self.model_group)
 
         self.bone_group = WeightParamGroup(
             "骨骼", "", "选择", self.TIP_SELECT_BONE)
-        self.bone_group.set_hover_callbacks(
-            self._on_button_hover, self._on_button_leave)
+        self._watch_hint(self.bone_group.btn, self.TIP_SELECT_BONE)
+        for widget in (self.bone_group.label, self.bone_group.line_edit):
+            self._watch_hint(widget, "在视口选中目标关节，再点「选择」拾取。")
         self.bone_group.on_clicked(lambda: self.on_select("骨骼"))
         main_layout.addLayout(self.bone_group)
 
@@ -130,6 +132,7 @@ class WeightCurveEditorWindow(QWidget):
 
         # 贝塞尔曲线（共享）
         self.curve_widget = WeightCurveWidget()
+        self._watch_hint(self.curve_widget, "拖动 p1 或 p2 手柄调整权重过渡。也可在下方输入精确数值。")
         main_layout.addWidget(self.curve_widget, alignment=Qt.AlignCenter)
 
         # 镜像手柄 checkbox
@@ -137,7 +140,7 @@ class WeightCurveEditorWindow(QWidget):
             "镜像贝塞尔手柄（p1 / p2 关于 (0.5, 0.5) 中心对称）")
         self.mirror_checkbox.setStyleSheet(
             "color: #9ecbff; font-size: 10pt; padding: 2px;")
-        self.mirror_checkbox.setToolTip(self.TIP_MIRROR)
+        self._watch_hint(self.mirror_checkbox, self.TIP_MIRROR)
         self.mirror_checkbox.stateChanged.connect(self._on_mirror_toggled)
         main_layout.addWidget(self.mirror_checkbox)
 
@@ -150,15 +153,19 @@ class WeightCurveEditorWindow(QWidget):
         # Xs / Ys（共享）
         self.xs_group = WeightParamGroupMulti(
             "Xs 控制点", "应用", self.TIP_APPLY_XS)
-        self.xs_group.set_hover_callbacks(
-            self._on_button_hover, self._on_button_leave)
+        self._watch_hint(self.xs_group.btn, self.TIP_APPLY_XS)
+        self._watch_hint(self.xs_group.label, "从左到右填写 p0～p3 的控制点的横坐标，再点「应用」。")
+        for index, field in enumerate(self.xs_group.line_edits):
+            self._watch_hint(field, f"填写 p{index} 的 X 坐标（0～1），再点「应用」。")
         self.xs_group.on_clicked(self.on_apply_xs)
         main_layout.addLayout(self.xs_group)
 
         self.ys_group = WeightParamGroupMulti(
             "Ys 控制点", "应用", self.TIP_APPLY_YS)
-        self.ys_group.set_hover_callbacks(
-            self._on_button_hover, self._on_button_leave)
+        self._watch_hint(self.ys_group.btn, self.TIP_APPLY_YS)
+        self._watch_hint(self.ys_group.label, "从左到右填写 p0～p3 的控制点的纵坐标，再点「应用」。")
+        for index, field in enumerate(self.ys_group.line_edits):
+            self._watch_hint(field, f"填写 p{index} 的 Y 坐标（0～1），再点「应用」。")
         self.ys_group.on_clicked(self.on_apply_ys)
         main_layout.addLayout(self.ys_group)
 
@@ -192,6 +199,12 @@ class WeightCurveEditorWindow(QWidget):
         self.legacy_tab = self._build_legacy_tab()
         self.tabs.addTab(self.legacy_tab, "骨骼投影")
 
+        tab_bar = self.tabs.tabBar()
+        tab_hints = {
+            0: "用脊线与 FWD/BWD 边界控制权重范围和过渡。",
+            1: "按骨骼与网格的关系解算权重，可选择模式、范围和软选半径。",
+        }
+        self._watch_hint(tab_bar, lambda pos: tab_hints.get(tab_bar.tabAt(pos), ""))
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         # 状态栏
@@ -204,7 +217,10 @@ class WeightCurveEditorWindow(QWidget):
             "padding: 8px; background-color: #2a2a2a; "
             "border: 1px solid #444; border-radius: 4px;"
         )
-        main_layout.addWidget(self.status_label)
+        self._footer = QVBoxLayout()
+        self._footer.setContentsMargins(10, 0, 10, 10)
+        self._footer.addWidget(self.status_label)
+        outer.addLayout(self._footer)
 
         # 信号
         self.curve_widget.valueChanged.connect(self.on_curve_changed)
@@ -242,11 +258,10 @@ class WeightCurveEditorWindow(QWidget):
         self.action_buttons = []
         for idx, (text, key, cb) in enumerate(btn_defs):
             tip = self.BTN_TIPS.get(key, "")
-            btn = HoverButton(text, tip)
+            btn = QPushButton(text)
             btn.setStyleSheet(
                 "background-color: #5a5a5a; color: white; font-size: 11pt;")
-            btn.set_hover_callbacks(
-                self._on_button_hover, self._on_button_leave)
+            self._watch_hint(btn, tip)
             btn.clicked.connect(cb)
             grid.addWidget(btn, idx // 3, idx % 3)
             self.action_buttons.append(btn)
@@ -264,42 +279,55 @@ class WeightCurveEditorWindow(QWidget):
         mode_label.setStyleSheet(
             "color: #FFD700; font-size: 12pt; font-weight: bold;")
         layout.addWidget(mode_label)
+        self._watch_hint(mode_label, "选择一种投影模式，再按该模式要求准备骨骼和网格。")
 
         mode_grid = QGridLayout()
         mode_grid.setSpacing(8)
         self.legacy_mode_group = QButtonGroup(self)
-        for i, (text, mode) in enumerate(self.LEGACY_MODES):
+        for i, (text, mode, tip) in enumerate(self.LEGACY_MODES):
             radio = QRadioButton(text)
             radio.setStyleSheet("color: white; font-size: 11pt;")
             radio.setProperty("mode_id", mode)
+            self._watch_hint(radio, tip)
             self.legacy_mode_group.addButton(radio, i)
             mode_grid.addWidget(radio, i // 4, i % 4)
         self.legacy_mode_group.button(0).setChecked(True)
         layout.addLayout(mode_grid)
 
-        range_row=QHBoxLayout()
-        range_row.addWidget(QLabel("关节/脊椎范围："))
-        self.legacy_range_mode=QComboBox()
-        self.legacy_range_mode.addItem("自动范围（网格表面连通）", "auto")
-        self.legacy_range_mode.addItem("当前顶点/软选范围", "selection")
+        range_row = QHBoxLayout()
+        range_label = QLabel("关节/脊椎范围：")
+        range_tip = "关节和脊椎可使用自动连通范围，或使用 Maya 当前所选顶点及软选范围。"
+        self._watch_hint(range_label, range_tip)
+        range_row.addWidget(range_label)
+        self.legacy_range_mode = QComboBox()
+        self._set_combo_hints(self.legacy_range_mode, range_tip, (
+            ("自动范围（网格表面连通）", "auto", "沿网格表面自动选取与目标区域连通的顶点。"),
+            ("当前顶点/软选范围", "selection", "使用当前选中的顶点；启用 Maya 软选择时也包含其影响范围。"),
+        ))
         range_row.addWidget(self.legacy_range_mode)
-        preview=QPushButton("预览范围（仅选点）")
+        preview = QPushButton("预览范围（仅选点）")
+        self._watch_hint(preview, "查看关节或脊椎解算范围。自动模式会选中顶点，预览不会写入权重。")
         preview.clicked.connect(self.on_preview_legacy_range)
         range_row.addWidget(preview)
         layout.addLayout(range_row)
 
-        reference_row=QHBoxLayout()
-        reference_row.addWidget(QLabel("关节/脊椎参考："))
-        self.legacy_reference_space=QComboBox()
-        self.legacy_reference_space.addItem("Bind 绑定空间（推荐）", "bind")
-        self.legacy_reference_space.addItem("当前姿态（原方式）", "current")
-        self.legacy_reference_space.setToolTip("关节/脊椎在绑定输入中计算，再按顶点编号写回当前姿态；次级仍使用当前 Maya 软选。")
+        reference_row = QHBoxLayout()
+        reference_label = QLabel("关节/脊椎参考：")
+        reference_tip = "选择关节或脊椎的计算空间。绑定空间适合模型已摆好姿态时使用。"
+        self._watch_hint(reference_label, reference_tip)
+        reference_row.addWidget(reference_label)
+        self.legacy_reference_space = QComboBox()
+        self._set_combo_hints(self.legacy_reference_space, reference_tip, (
+            ("Bind 绑定空间（推荐）", "bind", "按绑定状态计算权重，再按顶点编号写回当前姿态。"),
+            ("当前姿态（原方式）", "current", "直接使用当前姿态的模型和骨骼计算权重。"),
+        ))
         reference_row.addWidget(self.legacy_reference_space)
         layout.addLayout(reference_row)
 
         # 实时开关
         self.legacy_realtime = QCheckBox("实时（拖动贝塞尔/改半径立即重算）")
         self.legacy_realtime.setStyleSheet("color: white; font-size: 11pt;")
+        self._watch_hint(self.legacy_realtime, "勾选后，调整贝塞尔曲线或软选半径会自动解算当前模式。")
         layout.addWidget(self.legacy_realtime)
 
         # 半径
@@ -308,6 +336,9 @@ class WeightCurveEditorWindow(QWidget):
         radius_label.setStyleSheet("color: white; font-size: 11pt;")
         radius_label.setFixedWidth(80)
         self.legacy_radius = FloatSliderGroup()
+        self._watch_hint(radius_label, "设置 Maya 的软选择半径，与 Maya 的软选择设置同步。")
+        self._watch_hint(self.legacy_radius.spin, "输入数值或用箭头微调 Maya 的软选择半径。")
+        self._watch_hint(self.legacy_radius.slider, "拖动滑块快速调整 Maya 的软选择半径。")
         self.legacy_radius.spin.setDecimals(6)
         self.legacy_radius.set_range(0.0,20.0)
         self._sync_legacy_radius_from_maya()
@@ -333,14 +364,11 @@ class WeightCurveEditorWindow(QWidget):
         layout.addWidget(hint)
 
         # 解算按钮
-        self.legacy_solve_btn = HoverButton(
-            "解算",
-            "用当前参数对选中 mesh 计算骨骼投影权重。")
+        self.legacy_solve_btn = QPushButton("解算")
+        self._watch_hint(self.legacy_solve_btn, "按当前投影模式和参数计算并写入模型权重。")
         self.legacy_solve_btn.setStyleSheet(
             "background-color: #5a5a5a; color: white; "
             "font-size: 12pt; padding: 8px;")
-        self.legacy_solve_btn.set_hover_callbacks(
-            self._on_button_hover, self._on_button_leave)
         self.legacy_solve_btn.clicked.connect(self.on_legacy_solve)
         layout.addWidget(self.legacy_solve_btn)
 
@@ -376,14 +404,51 @@ class WeightCurveEditorWindow(QWidget):
         if log_fn is not None:
             log_fn(text)
 
-    def _on_button_hover(self, tooltip_text):
-        if not tooltip_text:
-            return
-        self._apply_status(f"💡 {tooltip_text}", self.STATUS_WARN)
+    def _watch_hint(self, widget, hint):
+        """Register text or, for a control with multiple items, a position lookup."""
+        if widget not in self._hover_hints:
+            widget.installEventFilter(self)
+        self._hover_hints[widget] = hint
+        if callable(hint):
+            widget.setMouseTracking(True)
 
-    def _on_button_leave(self):
-        text, color = self._current_status
-        self._apply_status(text, color)
+    def _set_combo_hints(self, combo, hint, items):
+        for label, value, _ in items:
+            combo.addItem(label, value)
+        self._watch_hint(combo, hint)
+        view = combo.view()
+
+        def item_hint(pos):
+            index = view.indexAt(pos)
+            return items[index.row()][2] if index.isValid() else hint
+
+        self._watch_hint(view.viewport(), item_hint)
+
+    def eventFilter(self, widget, event):
+        hint = self._hover_hints.get(widget)
+        if hint is not None:
+            event_type = event.type()
+            if event_type == QEvent.ToolTip:
+                return True
+            if event_type in (QEvent.Leave, QEvent.Hide):
+                if self._active_hint[0] is widget:
+                    self._show_hover_hint(None, "")
+            elif event_type == QEvent.Enter:
+                text = hint(widget.mapFromGlobal(QCursor.pos())) if callable(hint) else hint
+                self._show_hover_hint(widget, text)
+            elif event_type == QEvent.MouseMove and callable(hint):
+                self._show_hover_hint(widget, hint(event.pos()))
+        return super().eventFilter(widget, event)
+
+    def _show_hover_hint(self, widget, text):
+        active = (widget, text) if text else (None, "")
+        if active == self._active_hint:
+            return
+        self._active_hint = active
+        if text:
+            self._apply_status(f"💡 {text}", self.STATUS_WARN)
+        else:
+            self._apply_status(*self._current_status)
 
     def _on_tab_changed(self, index):
         """切换 tab 时按当前 page 内容调整 tabs 高度 + 窗口高度。"""
@@ -401,7 +466,7 @@ class WeightCurveEditorWindow(QWidget):
         content = self._scroll.widget()
         if content is None:
             return
-        need_h = content.sizeHint().height() + 4
+        need_h = content.sizeHint().height() + self._footer.sizeHint().height() + 4
         try:
             screen = QApplication.instance().primaryScreen().availableGeometry()
             max_h = int(screen.height() * 0.92)
@@ -648,7 +713,7 @@ class WeightCurveEditorWindow(QWidget):
         core.set_weight_mode(new_mode)
         display = "Soft" if new_mode == "soft" else "IK"
         self.action_buttons[3].setText(f"模式: {display}")
-        self.action_buttons[3].update_hover_text(
+        self._watch_hint(self.action_buttons[3],
             f"点击切换到 {'IK' if new_mode == 'soft' else 'Soft'} 模式。"
             f"需要先生成边界才能看到差异。")
         if not self._last_mesh:
