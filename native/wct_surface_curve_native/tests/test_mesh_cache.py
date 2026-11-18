@@ -1,13 +1,15 @@
-import ast,os,hashlib,json,contextlib,io,math
+import ast,os,contextlib,io,math
 from time import perf_counter
 from collections import OrderedDict
 from types import MappingProxyType,SimpleNamespace
 from pathlib import Path
+from runpy import run_path
 from unittest.mock import patch
 import unittest
 import numpy as np
 import synthetic_curve_scenes as scenes
 ROOT=Path(__file__).resolve().parents[1]
+fingerprint = run_path(str(ROOT.parents[1] / 'tools/CacheFingerprint.py'))['fingerprint']
 class Point:
  def __init__(self,x,y=0,z=0,w=1):self.x,self.y,self.z,self.w=x,y,z,w
 class Dag:
@@ -16,7 +18,7 @@ class Dag:
  def inclusiveMatrix(self):return SimpleNamespace(getElement=lambda i,j:self.matrix[i,j])
 def load():
  path=ROOT.parents[1]/'tools/MeshRegionCache.py';tree=ast.parse(path.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
- ns=dict(os=os,hashlib=hashlib,json=json,OrderedDict=OrderedDict,MappingProxyType=MappingProxyType,np=np,perf_counter=perf_counter,cmds=SimpleNamespace(ls=lambda *a,**kw:['uuid']),om=SimpleNamespace(MSpace=SimpleNamespace(kObject=0)))
+ ns=dict(log=scenes.LOG,os=os,fingerprint=fingerprint,OrderedDict=OrderedDict,MappingProxyType=MappingProxyType,np=np,perf_counter=perf_counter,cmds=SimpleNamespace(ls=lambda *a,**kw:['uuid']),om=SimpleNamespace(MSpace=SimpleNamespace(kObject=0)))
  exec(compile(tree,str(path),'exec'),ns);return ns
 class MeshCacheTests(unittest.TestCase):
  def setUp(self):

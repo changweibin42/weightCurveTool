@@ -344,8 +344,6 @@ class LegacyBoundaryAlgorithmsMixin(object):
             log.warn("[权重] DTW {} 平均切线点积 {:.2f} < 0.5".format(label, mean_dot))
             return None
 
-        return matched     
-        
         return matched
 
 

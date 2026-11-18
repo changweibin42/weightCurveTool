@@ -59,5 +59,8 @@ class SurfaceSourceGuardTests(unittest.TestCase):
    if name=='project_to_surface':
     node=after[name];i=next(i for i,n in enumerate(node.body) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='backend' for t in n.targets))
     self.assertIsInstance(node.body[i+1],ast.If);del node.body[i:i+2]
+    # Logging now uses the module-level import; compare the fallback itself.
+    handler=next(n for n in before[name].body if isinstance(n,ast.Try)).handlers[0]
+    self.assertEqual(ast.unparse(handler.body.pop(0)), 'from ..Logger import log')
    self.assertEqual(ast.dump(before[name]),ast.dump(after[name]),name)
 if __name__=='__main__':unittest.main()

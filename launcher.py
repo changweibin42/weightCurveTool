@@ -1,11 +1,9 @@
 # launcher.py 完整
 import os
-import maya.cmds as cmds
 from PySide2 import QtWidgets
 import maya.OpenMayaUI as omui
 import shiboken2
 
-from .Logger import log
 from .plugin_loader import load_all_plugins_in_folder
 from .ui import WeightCurveEditorWindow, WINDOW_OBJ_NAME
 

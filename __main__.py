@@ -22,6 +22,7 @@ import sys
 _RELOAD_ORDER = (
     'weightCurveTool.tools',
     'weightCurveTool.tools.MayaSelectors',
+    'weightCurveTool.tools.CacheFingerprint',
     'weightCurveTool.tools.ColorScheme',
     'weightCurveTool.tools.CurveRefine',
     'weightCurveTool.tools.curve_core',

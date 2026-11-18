@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import unittest
 import numpy as np
+from synthetic_curve_scenes import LOG
 ROOT=Path(__file__).resolve().parents[1]
 class NativeProjectionTests(unittest.TestCase):
  def setUp(self):
@@ -18,7 +19,7 @@ class NativeProjectionTests(unittest.TestCase):
    self.calls.append((mesh,mode,payload));words=payload.split();n=int(words[1]);points=np.array(list(map(float,words[2:]))).reshape(n,3)
    return np.vstack((np.column_stack((points,np.zeros(n))),[-1.,1.,float(n),-2.])).reshape(-1)
   p=ROOT.parents[1]/'tools/NativeProjection.py';tree=ast.parse(p.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
-  self.ns=dict(os=os,json=json,np=np,cmds=SimpleNamespace(optionVar=option,pluginInfo=lambda *a,**kw:['wctProjectPoints'],wctProjectPoints=command),StrictDriver=SimpleNamespace(binary_identity=identity))
+  self.ns=dict(log=LOG,run_native_command=lambda command,*args:command(*args),os=os,json=json,np=np,cmds=SimpleNamespace(optionVar=option,pluginInfo=lambda *a,**kw:['wctProjectPoints'],wctProjectPoints=command),StrictDriver=SimpleNamespace(binary_identity=identity))
   exec(compile(tree,str(p),'exec'),self.ns);self.points=np.arange(120,dtype=float).reshape(40,3)
  def tearDown(self):self.env.stop()
  def project(self,points=None):
@@ -56,7 +57,7 @@ class NativeProjectionTests(unittest.TestCase):
 class SurfaceHookTests(unittest.TestCase):
  def setUp(self):
   source=ROOT.parents[1]/'tools/RestPoseSurface.py';cls=next(n for n in ast.parse(source.read_text()).body if isinstance(n,ast.ClassDef) and n.name=='RestPoseSurface');method=next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='project_to_surface')
-  self.calls=[];self.ns=dict(np=np,log=SimpleNamespace(warn=lambda *a:None))
+  self.calls=[];self.ns=dict(np=np,log=LOG)
   class Selection:
    def add(self,*a):pass
    def getDagPath(self,i):return 'mesh'

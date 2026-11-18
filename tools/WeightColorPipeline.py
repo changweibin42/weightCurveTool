@@ -181,7 +181,7 @@ def _active_boundary_curve_names(ctx):
 
 
 def _log_pipeline_diagnostics(ctx, mesh_name, picked, par_jnt):
-    if not getattr(ctx, 'verbose_diagnostics', False):
+    if not log.details_enabled() or not getattr(ctx, 'verbose_diagnostics', False):
         return
     try:
         log.info("========== WeightColorPipeline 诊断开始 ==========")
@@ -332,9 +332,9 @@ def update_combined_vertex_colors(ctx, mesh_name, xs=None, ys=None,
             curve_names=curve_names,
         )
     except Exception as e:
-        log.warn("权重计算异常: {}".format(e))
-        log.warn(traceback.format_exc())
-        cmds.warning("权重计算异常，详细原因请查看 Script Editor / 日志")
+        cmds.warning("权重计算异常: {}".format(e))
+        if log.details_enabled():
+            log.debug(traceback.format_exc())
         return False
         
     solve_time = perf_counter() - solve_start
@@ -380,14 +380,15 @@ def update_combined_vertex_colors(ctx, mesh_name, xs=None, ys=None,
             previous, valid_mask, weights, original, original_parent)
         weights = np.where(write_mask, weights, original)
 
-    try:
-        _wa = np.asarray(weights, dtype=float)
-        log.info("[诊断] 写入前 weights: shape={}, min={:.6f}, max={:.6f}, nonzero={}".format(
-            _wa.shape, float(np.nanmin(_wa)), float(np.nanmax(_wa)), int(np.count_nonzero(_wa))))
-    except Exception as _e:
-        log.warn("[诊断] 无法统计待写权重: {}".format(_e))
+    if log.details_enabled():
+        try:
+            _wa = np.asarray(weights, dtype=float)
+            log.info("[诊断] 写入前 weights: shape={}, min={:.6f}, max={:.6f}, nonzero={}".format(
+                _wa.shape, float(np.nanmin(_wa)), float(np.nanmax(_wa)), int(np.count_nonzero(_wa))))
+        except Exception as _e:
+            log.warn("[诊断] 无法统计待写权重: {}".format(_e))
 
-    if getattr(ctx, 'verbose_diagnostics', False):
+    if log.details_enabled() and getattr(ctx, 'verbose_diagnostics', False):
         _log_skin_total_stats(mesh_name, "写入前")
     paint_start = perf_counter()
 
@@ -399,7 +400,8 @@ def update_combined_vertex_colors(ctx, mesh_name, xs=None, ys=None,
         if write_mask is None:
             _undo_silently()
         cmds.warning("权重写入异常: {}".format(e))
-        log.warn(traceback.format_exc())
+        if log.details_enabled():
+            log.debug(traceback.format_exc())
         return False
     cmds.undoInfo(closeChunk=True)
 
@@ -413,7 +415,7 @@ def update_combined_vertex_colors(ctx, mesh_name, xs=None, ys=None,
         if actual_parent is not None:
             ctx._boundary_write_history[history_key] = committed_state(
                 valid_mask, baseline, w_real, actual_parent)
-    if getattr(ctx, 'verbose_diagnostics', False):
+    if log.details_enabled() and getattr(ctx, 'verbose_diagnostics', False):
         _log_skin_total_stats(mesh_name, "写入后")
     color_start = perf_counter()
     displayed = ctx.color_display.apply(mesh_name, w_real)

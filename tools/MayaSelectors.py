@@ -35,13 +35,16 @@ def get_selected_joint():
 # 场景查询
 # ============================================================================
 
-def _sanitize_name(name):
-    """与 GroupManager.sanitize_name 保持一致。
-
-    为避免 MayaSelectors 反向依赖 GroupManager（引发 reload 顺序耦合），
-    这里内联一份。若两处实现需要改动，务必同步。
-    """
+def sanitize_name(name):
+    """Replace characters that cannot appear in a generated loc prefix."""
     return re.sub(r'[^a-zA-Z0-9_]', '_', name)
+
+
+def curve_prefix(mesh_name, kind):
+    """Use the mesh name directly for the main curve."""
+    if kind == 'main':
+        return mesh_name
+    return f"{mesh_name}_{kind}"
 
 
 def _loc_sort_key(loc):
@@ -76,7 +79,7 @@ def find_main_locs(mesh_name):
     返回：
         按末尾序号排序后的 loc 名列表
     """
-    mesh_clean = _sanitize_name(mesh_name)
+    mesh_clean = sanitize_name(mesh_name)
     prefix = f"loc_{mesh_clean}_"
     all_joints = cmds.ls(f"{prefix}*", type='joint') or []
     locs = [loc for loc in all_joints

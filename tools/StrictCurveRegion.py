@@ -10,6 +10,8 @@ import heapq
 from collections import Counter, deque
 import numpy as np
 import maya.cmds as cmds
+
+from ..Logger import log
 import maya.api.OpenMaya as om
 try:
     from .NativeEdgeCuts import compute_if_enabled as _native_cut_backend
@@ -114,7 +116,7 @@ def _wct_loop(anchors, graph, points, median, label):
             queue.extend(links[a] - seen)
     if len(seen) != len(links):
         raise RuntimeError(label + ': snapping produced multiple loops')
-    print('[RangeTest] {}: {} loop vertices, {} spur vertices removed'.format(label, len(seen), removed))
+    log.info('[RangeTest] {}: {} loop vertices, {} spur vertices removed'.format(label, len(seen), removed))
     return seen
 
 
@@ -179,7 +181,7 @@ def _wct_strict_refine(mesh, points, graph, interior, fwd, bwd, median, curve_na
         sign = 1.0 if positive > len(usable) / 2.0 else -1.0
         tests.append(raw)
         signs.append(sign)
-        print('[RangeTest Strict] {}: orientation agreement={:.1%}, references={}'.format(
+        log.info('[RangeTest Strict] {}: orientation agreement={:.1%}, references={}'.format(
             label, agreement, len(usable)))
     accepted, outside, on_curve, uncertain = set(), set(), set(), set()
     for v in sorted(candidates):
@@ -204,7 +206,7 @@ def _wct_strict_refine(mesh, points, graph, interior, fwd, bwd, median, curve_na
             if nb in accepted and nb not in reached:
                 reached.add(nb)
                 queue.append(nb)
-    print('[RangeTest Strict] candidates={}, outside={}, on_curve={}, uncertain={}, disconnected={}'.format(
+    log.info('[RangeTest Strict] candidates={}, outside={}, on_curve={}, uncertain={}, disconnected={}'.format(
         len(candidates), len(outside), len(on_curve), len(uncertain), len(accepted - reached)))
     return reached, outside, on_curve, uncertain, tests, signs, nearby, tolerance
 
@@ -276,7 +278,7 @@ def build_strict_region(mesh_name, curve_names):
         try:
             sample_mesh_key=signature(mesh_path,mesh,points,median,SAMPLE_SPACING)
         except Exception as problem:
-            print('[WCT SampleCache V17.8.14] mesh uncached: '+str(problem))
+            log.info('[WCT SampleCache V17.8.14] mesh uncached: '+str(problem))
     def sample(curve_name):
         curve_path=_wct_shape(curve_name, 'nurbsCurve')
         fn = om.MFnNurbsCurve(curve_path)
@@ -307,7 +309,7 @@ def build_strict_region(mesh_name, curve_names):
             anchors,surface_samples,max_offset=sample_backend(sample_mesh_key,curve_path,fn,compute)
         else:
             anchors,surface_samples,max_offset=compute()
-        print('[RangeTest] {}: samples={}, max surface offset={:.6f}'.format(
+        log.info('[RangeTest] {}: samples={}, max surface offset={:.6f}'.format(
             curve_name, len(surface_samples), max_offset))
         curve_samples[curve_name] = surface_samples
         return anchors
@@ -339,7 +341,7 @@ def build_strict_region(mesh_name, curve_names):
         raise RuntimeError('Ridge falls on snapped boundary; no interior seeds at this mesh resolution')
     target, hits = votes.most_common(1)[0]
     ratio = hits / float(sum(votes.values()))
-    print('[RangeTest] component sizes={}, ridge votes={}, agreement={:.1%}'.format(
+    log.info('[RangeTest] component sizes={}, ridge votes={}, agreement={:.1%}'.format(
         [len(c) for c in components], dict(votes), ratio))
     if ratio < .90:
         raise RuntimeError('Ridge spans several regions; inspect curve projection and loop snapping')
@@ -363,7 +365,7 @@ def build_strict_region(mesh_name, curve_names):
     strict,recovered_holes=_recover_enclosed_interior(graph,strict,interior,boundary_vertices)
     outside.difference_update(recovered_holes)
     uncertain.difference_update(recovered_holes)
-    print('[StrictHoles V17.3.5] recovered={}, vertices={}'.format(
+    log.info('[StrictHoles V17.3.5] recovered={}, vertices={}'.format(
         len(recovered_holes),recovered_holes[:32]))
     outer, outer_error = _fwd_exterior(
         graph, components, labels, target, strict, fwd, bwd, tests, signs, nearby, tolerance)
@@ -377,13 +379,13 @@ def build_strict_region(mesh_name, curve_names):
         # may be restored; no broadening across either real boundary.
         outer,recovered_outer_holes=_recover_enclosed_interior(
             graph,outer,coarse_outer,boundary_vertices|strict)
-    print('[StrictOuterHoles V17.3.5] recovered={}, vertices={}'.format(
+    log.info('[StrictOuterHoles V17.3.5] recovered={}, vertices={}'.format(
         len(recovered_outer_holes),recovered_outer_holes[:32]))
-    print('[StrictCurveRegion V17.3.5] strict_band={}, FWD_outer={}, on_curve={}, uncertain={}'.format(
+    log.info('[StrictCurveRegion V17.3.5] strict_band={}, FWD_outer={}, on_curve={}, uncertain={}'.format(
         len(strict), len(outer), len(on_curve), len(uncertain)))
     if query_session is not None:query_session.finish()
     if hasattr(graph,'expansion_hits'):
-        print('[WCT TopologyCache V17.8.16] ring_hits={} ring_misses={}'.format(
+        log.info('[WCT TopologyCache V17.8.16] ring_hits={} ring_misses={}'.format(
             graph.expansion_hits,graph.expansion_misses))
     return dict(mask=_mask(strict, count), fwd_outer=_mask(outer, count),
                 outer_error=outer_error, graph=graph, points=points, median=median,
@@ -675,7 +677,7 @@ def _curve_surface_witnesses(region, mesh, eps):
                 by_edge.setdefault((a,b),[]).append((max(0.,min(1.,u)),i,j))
         witnesses.append(by_edge)
     if region['field_fan_bridges']:
-        print('[CurveFan V17.6.2] bridges={}, faces={}'.format(
+        log.info('[CurveFan V17.6.2] bridges={}, faces={}'.format(
             len(region['field_fan_bridges']),[r['faces'] for r in region['field_fan_bridges'][:8]]))
     return witnesses
 
@@ -876,7 +878,7 @@ def _adaptive_ridge_witnesses(region,mesh,curve,eps,max_queries=192,max_depth=8)
     target=region['curve_edge_witnesses'][0]
     for edge,rows in additions.items():target.setdefault(edge,[]).extend(rows)
     region['field_adaptive_ridge_samples']=observed
-    print('[RidgeAdaptive V17.8.10] queries={}, observed_faces={}, witness_edges={}'.format(
+    log.info('[RidgeAdaptive V17.8.10] queries={}, observed_faces={}, witness_edges={}'.format(
         queries,sorted(set(row['face'] for row in observed)),len(additions)))
     return len(additions)
 
@@ -907,7 +909,7 @@ def _repair_ridge_constraints(region,mesh,curves,data,edges,fixed,eps):
         updated.append((a,b,length,unique));changed.append([int(a),int(b)])
     if not changed:return False
     edges[:]=updated
-    print('[RidgeAdaptive V17.8.10] added_edges={}; strict membership unchanged'.format(changed))
+    log.info('[RidgeAdaptive V17.8.10] added_edges={}; strict membership unchanged'.format(changed))
     return True
 
 
@@ -1029,7 +1031,7 @@ def weight_coordinates(region, mesh_name):
     # vertices cannot sever a valid surface route. Curve constraints, not
     # guessed vertex labels, stop propagation across the three curves.
     recoveries=region['field_witness_recoveries']
-    print('[CurveConstraints V17.3.5] recovered={}, edges={}'.format(
+    log.info('[CurveConstraints V17.3.5] recovered={}, edges={}'.format(
         len(recoveries),[r['edge'] for r in recoveries[:12]]))
     intersection_time = clock()-stage
     stage = clock()
@@ -1052,9 +1054,9 @@ def weight_coordinates(region, mesh_name):
         t[v]=min(1.,abs(2.*q-1.))
         side[v]=1 if q>=.5 else -1
         ridge[v]=v in fixed and abs(fixed[v]-.5)<=1e-8
-    print('[ThreeCurveField V17.3.5] strict={}, constraints_on_edges={}, ridge_vertices={}, no_hard_partition=True'.format(
+    log.info('[ThreeCurveField V17.3.5] strict={}, constraints_on_edges={}, ridge_vertices={}, no_hard_partition=True'.format(
         len(selected),sum(bool(e[3]) for e in edges),int(ridge.sum())))
-    print('[WCT 衰减内部耗时] 准备={:.3f}s 交点={:.3f}s 线性求解={:.3f}s 总计={:.3f}s 查询={}'.format(
+    log.info('[WCT 衰减内部耗时] 准备={:.3f}s 交点={:.3f}s 线性求解={:.3f}s 总计={:.3f}s 查询={}'.format(
         setup_time, intersection_time, solve_time, clock()-started,
         region['field_query_counts']))
     return t,side,ridge

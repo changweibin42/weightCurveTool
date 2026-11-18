@@ -17,13 +17,10 @@ import maya.cmds as cmds
 import re
 
 from ..Logger import log
+from .MayaSelectors import curve_prefix, sanitize_name
 
 
 MAIN_GROUP = "weightCurveJoints"
-
-
-def sanitize_name(name):
-    return re.sub(r'[^a-zA-Z0-9_]', '_', name)
 
 
 class GroupManager(object):
@@ -196,10 +193,16 @@ class GroupManager(object):
             log.warn(f"移动 {jnt} 到 {jg} 失败: {e}")
             return False
 
-    def _get_curve_prefix(self, mesh_name, kind):
-        if kind == 'main':
-            return mesh_name
-        return f"{mesh_name}_{kind}"
+    @staticmethod
+    def _move_curves(mesh_name, kind, group):
+        prefix = curve_prefix(mesh_name, kind)
+        for suffix in ("_ring_laplacian", "_ring_gaussian"):
+            name = f"{prefix}{suffix}"
+            if cmds.objExists(name):
+                try:
+                    cmds.parent(name, group)
+                except Exception:
+                    pass
 
     def move_curves_to_active(self, mesh_name, kind='main'):
         if kind not in self.active_groups:
@@ -207,27 +210,13 @@ class GroupManager(object):
         _, cg = self.active_groups[kind]
         if not cg or not cmds.objExists(cg):
             return
-        prefix = self._get_curve_prefix(mesh_name, kind)
-        for suffix in ["_ring_laplacian", "_ring_gaussian"]:
-            name = f"{prefix}{suffix}"
-            if cmds.objExists(name):
-                try:
-                    cmds.parent(name, cg)
-                except Exception:
-                    pass
+        self._move_curves(mesh_name, kind, cg)
 
     def move_curves_to_set(self, set_name, mesh_name, kind='main'):
         cg = self._resolve_group(set_name, kind, 'curves')
         if not cg or not cmds.objExists(cg):
             return
-        prefix = self._get_curve_prefix(mesh_name, kind)
-        for suffix in ["_ring_laplacian", "_ring_gaussian"]:
-            name = f"{prefix}{suffix}"
-            if cmds.objExists(name):
-                try:
-                    cmds.parent(name, cg)
-                except Exception:
-                    pass
+        self._move_curves(mesh_name, kind, cg)
 
     # ==================== 按 jnt 反查 kind ====================
 
@@ -261,14 +250,7 @@ class GroupManager(object):
         if not cmds.objExists(cg):
             return
 
-        prefix = self._get_curve_prefix(mesh_name, kind)
-        for suffix in ["_ring_laplacian", "_ring_gaussian"]:
-            name = f"{prefix}{suffix}"
-            if cmds.objExists(name):
-                try:
-                    cmds.parent(name, cg)
-                except Exception:
-                    pass
+        self._move_curves(mesh_name, kind, cg)
 
     # ==================== 清理 ====================
 

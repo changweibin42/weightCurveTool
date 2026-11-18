@@ -6,11 +6,13 @@ Maya arc-length inversion can drift even while CVs remain byte-identical.
 Pin that derived sample set until any authoritative input changes.
 """
 import os
-import hashlib
-import json
 from collections import OrderedDict
 import numpy as np
 import maya.cmds as cmds
+
+from ..Logger import log
+
+from .CacheFingerprint import fingerprint
 import maya.api.OpenMaya as om
 
 _CACHE = OrderedDict()
@@ -19,19 +21,6 @@ _LIMIT = 24
 
 def clear_cache():
     _CACHE.clear()
-
-
-def _digest(parts):
-    h=hashlib.blake2b(digest_size=32)
-    for part in parts:
-        if isinstance(part,np.ndarray):
-            value=np.ascontiguousarray(part)
-            h.update(str((value.shape,value.dtype.str)).encode('ascii'))
-            h.update(value.tobytes())
-        else:
-            h.update(json.dumps(part,sort_keys=True,allow_nan=False).encode('utf-8'))
-        h.update(b'\0')
-    return h.digest()
 
 
 def _points(values):
@@ -46,18 +35,18 @@ def _matrix(path):
 def mesh_signature(path,mesh,points,median,spacing):
     name=path.fullPathName()
     counts,vertices=mesh.getVertices();tri_counts,tri_vertices=mesh.getTriangles()
-    return _digest([name,cmds.ls(name,uuid=True),float(median),float(spacing),
+    return fingerprint([name,cmds.ls(name,uuid=True),float(median),float(spacing),
         _points(points),_points(mesh.getPoints(om.MSpace.kObject)),_matrix(path),
         np.asarray(counts,dtype=np.int64),np.asarray(vertices,dtype=np.int64),
-        np.asarray(tri_counts,dtype=np.int64),np.asarray(tri_vertices,dtype=np.int64)])
+        np.asarray(tri_counts,dtype=np.int64),np.asarray(tri_vertices,dtype=np.int64)], sort_keys=True)
 
 
 def _key(mesh_key,path,curve):
     name=path.fullPathName()
-    return (mesh_key,_digest([name,cmds.ls(name,uuid=True),
+    return (mesh_key,fingerprint([name,cmds.ls(name,uuid=True),
         (curve.degree,curve.form),_points(curve.cvPositions(om.MSpace.kObject)),
         _points(curve.cvPositions(om.MSpace.kWorld)),_matrix(path),
-        np.asarray(curve.knots(),dtype=np.float64)]))
+        np.asarray(curve.knots(),dtype=np.float64)], sort_keys=True))
 
 
 def sample_if_unchanged(mesh_key,path,curve,compute):
@@ -66,13 +55,13 @@ def sample_if_unchanged(mesh_key,path,curve,compute):
     try:
         key=_key(mesh_key,path,curve)
     except Exception as exc:
-        print('[WCT SampleCache V17.8.14] uncached: '+str(exc))
+        log.info('[WCT SampleCache V17.8.14] uncached: '+str(exc))
         return compute()
     saved=_CACHE.get(key)
     if saved is not None:
         _CACHE.move_to_end(key)
         anchors,rows,offset=saved
-        print('[WCT SampleCache V17.8.14] hit '+path.fullPathName())
+        log.info('[WCT SampleCache V17.8.14] hit '+path.fullPathName())
         return (list(anchors),[(om.MPoint(x,y,z,w),face,param)
                 for x,y,z,w,face,param in rows],offset)
     # Never commit a failed/incomplete sampling operation.
@@ -83,5 +72,5 @@ def sample_if_unchanged(mesh_key,path,curve,compute):
     _CACHE[key]=(tuple(anchors),rows,float(offset))
     _CACHE.move_to_end(key)
     while len(_CACHE)>_LIMIT:_CACHE.popitem(last=False)
-    print('[WCT SampleCache V17.8.14] miss '+path.fullPathName())
+    log.info('[WCT SampleCache V17.8.14] miss '+path.fullPathName())
     return result

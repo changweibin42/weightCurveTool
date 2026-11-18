@@ -5,12 +5,14 @@ Only uncalibrated raw scalar/None values are stored. References, signs, masks,
 holes, connected components and weights are never cached here.
 """
 import os
-import hashlib
-import json
 from collections import OrderedDict
 from time import perf_counter
 import numpy as np
 import maya.cmds as cmds
+
+from ..Logger import log
+
+from .CacheFingerprint import fingerprint
 import maya.api.OpenMaya as om
 
 try:
@@ -27,22 +29,11 @@ def clear_cache():
     _CACHE.clear()
 
 
-def _hash(parts):
-    h=hashlib.blake2b(digest_size=32)
-    for part in parts:
-        if isinstance(part,np.ndarray):
-            value=np.ascontiguousarray(part)
-            h.update(str((value.shape,value.dtype.str)).encode('ascii'));h.update(value.tobytes())
-        else:h.update(json.dumps(part,allow_nan=False).encode('utf-8'))
-        h.update(b'\0')
-    return h.digest()
-
-
 def _curve_key(common,path,curve):
     name=path.fullPathName();matrix=path.inclusiveMatrix()
     def cvs(space):
         return np.asarray([(p.x,p.y,p.z,p.w) for p in curve.cvPositions(space)],dtype=np.float64)
-    return (common,_hash([name,cmds.ls(name,uuid=True),(curve.degree,curve.form),
+    return (common,fingerprint([name,cmds.ls(name,uuid=True),(curve.degree,curve.form),
         cvs(om.MSpace.kObject),cvs(om.MSpace.kWorld),
         np.asarray(curve.knots(),dtype=np.float64),
         np.asarray([[matrix.getElement(i,j) for j in range(4)] for i in range(4)],dtype=np.float64)]))
@@ -90,7 +81,7 @@ class QuerySession:
         key=None
         if self.common is not None:
             try:key=_curve_key(self.common,path,curve)
-            except Exception as exc:print('[WCT BoundaryQueryCache V17.9.0] curve uncached: '+str(exc))
+            except Exception as exc:log.info('[WCT BoundaryQueryCache V17.9.0] curve uncached: '+str(exc))
         shared=_CACHE.get(key,{}) if key is not None else {}
         values=_Values(shared);probe=_Probe()
         self.rows.append((label,key,values,probe))
@@ -110,7 +101,7 @@ class QuerySession:
             reused,computed=len(values.used),len(values.computed)
             if key is not None:
                 _CACHE[key]=dict(values);_CACHE.move_to_end(key)
-            print('[WCT BoundaryQueries V17.9.0] {} reused={} computed={} curve={:.4f}s/{} mesh={:.4f}s/{} normal={:.4f}s/{} tangent={:.4f}s/{} native={}/{:.4f}s'.format(
+            log.info('[WCT BoundaryQueries V17.9.0] {} reused={} computed={} curve={:.4f}s/{} mesh={:.4f}s/{} normal={:.4f}s/{} tangent={:.4f}s/{} native={}/{:.4f}s'.format(
                 label,reused,computed,
                 probe.seconds.get('curve',0.),probe.calls.get('curve',0),
                 probe.seconds.get('mesh',0.),probe.calls.get('mesh',0),
@@ -130,12 +121,12 @@ def prepare_queries(mesh,points,graph,tolerance,rings,mesh_name=None):
             counts,ids=mesh.getNormalIds()
             # Mesh graph signature includes complete geometry/edge order.
             # Add all normals and corner mappings; normal edits must invalidate.
-            common=_hash([1,geometry_key.hex(),float(tolerance),int(rings),
+            common=fingerprint([1,geometry_key.hex(),float(tolerance),int(rings),
                 np.asarray([(p.x,p.y,p.z,p.w) for p in points],dtype=np.float64),
                 np.asarray([(n.x,n.y,n.z) for n in normals],dtype=np.float64),
                 np.asarray([(n.x,n.y,n.z) for n in object_normals],dtype=np.float64),
                 np.asarray(counts,dtype=np.int64),np.asarray(ids,dtype=np.int64)])
-        except Exception as exc:print('[WCT BoundaryQueryCache V17.9.0] mesh uncached: '+str(exc))
-    print('[WCT BoundaryQueryCache V17.9.0] {} prepare={:.4f}s'.format(
+        except Exception as exc:log.info('[WCT BoundaryQueryCache V17.9.0] mesh uncached: '+str(exc))
+    log.info('[WCT BoundaryQueryCache V17.9.0] {} prepare={:.4f}s'.format(
         'enabled' if common is not None else 'timing-only',perf_counter()-started))
     return QuerySession(mesh,common,graph,mesh_name,tolerance,rings)
