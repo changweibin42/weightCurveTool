@@ -22,7 +22,8 @@
     "tools/StrictCurveRegion.py",
     "tools/SurfaceSlideBuilder.py",
     "tools/WeightCalculator.py",
-    "tools/WeightColorPipeline.py"
+    "tools/WeightColorPipeline.py",
+    "ui.py"
   ],
   "added_runtime_files": [
     "tools/NativeProjection.py",
