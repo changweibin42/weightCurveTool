@@ -13,6 +13,12 @@ from time import perf_counter
 import numpy as np
 import maya.cmds as cmds
 
+try:
+    from .NativeQueryReuse import mode_if_enabled as _query_reuse_mode
+except ImportError:
+    def _query_reuse_mode():
+        return 0
+
 def _shape(name,kind):
     matches=cmds.ls(name,long=True) or []
     if len(matches)!=1:
@@ -25,7 +31,7 @@ def _shape(name,kind):
         name=matches[0]
     return name
 
-def _batch(region, mesh_name, eps, mask=7, partial=False):
+def _batch(region, mesh_name, eps, mask=7, partial=False, query_reuse=None):
     edges=[(a,b,float(length)) for a,neighbors in enumerate(region['graph'])
            for b,length in neighbors.items() if b>a]
     chunks=[('2 {} {} {}'.format(len(region['points']),len(edges),mask) if partial else '1 {} {}'.format(len(region['points']),len(edges)))]
@@ -35,9 +41,14 @@ def _batch(region, mesh_name, eps, mask=7, partial=False):
         chunks.append(str(len(samples)))
         chunks.extend('{:.17g} {:.17g} {:.17g} {}'.format(float(p.x),float(p.y),float(p.z),int(face))
                       for p,face,_ in samples)
-    values=cmds.wctCurveEdgeCuts(_shape(mesh_name,'mesh'),
-                                *[_shape(c,'nurbsCurve') for c in region['curves']],float(eps),
-                                float(region['median']),4,' '.join(chunks))
+    reuse=_query_reuse_mode() if query_reuse is None else int(query_reuse)
+    if reuse not in (0,1):
+        raise ValueError('Query reuse must be 0 or 1')
+    arguments=(_shape(mesh_name,'mesh'),
+               *[_shape(c,'nurbsCurve') for c in region['curves']],float(eps),
+               float(region['median']),4,' '.join(chunks))
+    # Preserve the original eight-argument ABI when the new mode is disabled.
+    values=cmds.wctCurveEdgeCuts(*(arguments+(reuse,) if reuse else arguments))
     records=np.asarray(values,dtype=float).reshape(-1,6)
     if not np.all(np.isfinite(records)):
         raise RuntimeError('Non-finite native result')
@@ -238,7 +249,7 @@ def _fingerprints(region,mesh_name,eps):
     tri_counts=np.asarray(tri_counts,dtype=np.int64);tri_vertices=np.asarray(tri_vertices,dtype=np.int64)
     normal_counts=np.asarray(normal_counts,dtype=np.int64);normal_ids=np.asarray(normal_ids,dtype=np.int64)
     mesh_uuid=cmds.ls(shape,uuid=True)
-    modes=tuple(os.environ.get(k,'0') for k in _MODE_KEYS)
+    modes=tuple(os.environ.get(k,'0') for k in _MODE_KEYS)+(str(_query_reuse_mode()),)
     # Preserve the exact original digest sequence and bytes.
     common=_hash([shape,mesh_uuid,float(eps),float(region['median']),4,modes,
                   object_points,world_points,mesh_matrix,counts,connects,

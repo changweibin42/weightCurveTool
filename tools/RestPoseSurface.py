@@ -24,6 +24,11 @@ from .kd_tree_copy import KDTreeCopy
 from .mds import get_mds_embeddings_fast
 from .geodesic import get_fast_distance_matrix
 
+try:
+    from .NativeProjection import compute_if_enabled as _native_project_points
+except ImportError:
+    _native_project_points = None
+
 
 class RestPoseSurface(object):
     TRIANGULATE_SUFFIX = "_WCS_Triangulate"
@@ -227,6 +232,14 @@ class RestPoseSurface(object):
         arr = np.asarray(points, dtype=float)
         if not use_mesh_api:
             return self.copy_data(arr)
+        backend=globals().get('_native_project_points')
+        if backend:
+            try:
+                result=backend(self.triangulate_name,arr)
+            except Exception as e:
+                print('[WCT Native Projection] Python fallback: {}'.format(e))
+                result=None
+            if result is not None:return result
         try:
             sel = om.MSelectionList()
             sel.add(self.triangulate_name)
