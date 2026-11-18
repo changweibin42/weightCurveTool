@@ -1,4 +1,4 @@
-import ast,os,hashlib,json,contextlib,io,math,importlib.util
+import ast,os,hashlib,json,contextlib,io,math
 from time import perf_counter
 from collections import OrderedDict
 from types import MappingProxyType,SimpleNamespace
@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 import unittest
 import numpy as np
+import synthetic_curve_scenes as scenes
 ROOT=Path(__file__).resolve().parents[1]
 class Point:
  def __init__(self,x,y=0,z=0,w=1):self.x,self.y,self.z,self.w=x,y,z,w
@@ -14,7 +15,7 @@ class Dag:
  def fullPathName(self):return 'mesh'
  def inclusiveMatrix(self):return SimpleNamespace(getElement=lambda i,j:self.matrix[i,j])
 def load():
- path=ROOT/'weightCurveTool/tools/MeshRegionCache.py';tree=ast.parse(path.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
+ path=ROOT.parents[1]/'tools/MeshRegionCache.py';tree=ast.parse(path.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
  ns=dict(os=os,hashlib=hashlib,json=json,OrderedDict=OrderedDict,MappingProxyType=MappingProxyType,np=np,perf_counter=perf_counter,cmds=SimpleNamespace(ls=lambda *a,**kw:['uuid']),om=SimpleNamespace(MSpace=SimpleNamespace(kObject=0)))
  exec(compile(tree,str(path),'exec'),ns);return ns
 class MeshCacheTests(unittest.TestCase):
@@ -70,8 +71,7 @@ class MeshCacheTests(unittest.TestCase):
 
 class RegionIntegrationTests(unittest.TestCase):
  def test_cold_warm_and_changed_fwd_match_original_masks_and_fields(self):
-  path=ROOT/'verification/curves/tests/test_strict_integration.py';spec=importlib.util.spec_from_file_location('mesh_integration',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-  scene=module.Scene();original_factory=scene.om.MFnMesh
+  scene=scenes.Scene();original_factory=scene.om.MFnMesh
   class MeshProxy:
    def __init__(self,base):self.base=base
    def __getattr__(self,name):return getattr(self.base,name)
@@ -80,7 +80,7 @@ class RegionIntegrationTests(unittest.TestCase):
    def getTriangles(self):return [2]*len(scene.faces),[v for a,b,c,d in scene.faces for v in (a,b,c,a,c,d)]
    def getEdgeVertices(self,i):return scene.edges[i]
   scene.om.MFnMesh=lambda p:MeshProxy(original_factory(p));scene.om.MSpace.kObject=0
-  ns=module.region_ns(scene);ns['_wct_shape']=lambda name,kind:Dag() if kind=='mesh' else name
+  ns=scenes.region_ns(scene);ns['_wct_shape']=lambda name,kind:Dag() if kind=='mesh' else name
   cache=load();calls=[]
   def prepare(path,mesh,points,compute):
    def tracked():calls.append(1);return compute()

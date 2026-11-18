@@ -22,7 +22,7 @@ class DriverTests(unittest.TestCase):
   def command(*args):
    self.command_calls.append(args);return [0,1,.5,1,0,0,-1,1,2]
   cmds=SimpleNamespace(pluginInfo=plugin,optionVar=option,wctStrictBoundaryQueries=command)
-  p=ROOT/'weightCurveTool/tools/NativeStrictQueries.py';tree=ast.parse(p.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
+  p=ROOT.parents[1]/'tools/NativeStrictQueries.py';tree=ast.parse(p.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
   self.ns=dict(os=os,json=json,hashlib=hashlib,OrderedDict=OrderedDict,np=np,cmds=cmds);exec(compile(tree,str(p),'exec'),self.ns)
   self.graph=[{1:1.},{0:1.}]
  def tearDown(self):self.temp.cleanup();self.env.stop()

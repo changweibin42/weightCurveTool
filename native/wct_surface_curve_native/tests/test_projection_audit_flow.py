@@ -54,7 +54,7 @@ class SurfaceSourceGuardTests(unittest.TestCase):
   def methods(path):
    cls=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.ClassDef) and n.name=='RestPoseSurface')
    return {n.name:n for n in cls.body if isinstance(n,ast.FunctionDef)}
-  before=methods(ROOT/'tests/reference_native/RestPoseSurface_before.py');after=methods(ROOT/'weightCurveTool/tools/RestPoseSurface.py')
+  before=methods(ROOT/'tests/reference_native/RestPoseSurface_before.py');after=methods(ROOT.parents[1]/'tools/RestPoseSurface.py')
   for name in before:
    if name=='project_to_surface':
     node=after[name];i=next(i for i,n in enumerate(node.body) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='backend' for t in n.targets))

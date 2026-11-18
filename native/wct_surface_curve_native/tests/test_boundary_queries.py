@@ -1,4 +1,4 @@
-import ast,os,json,hashlib,contextlib,io,importlib.util
+import ast,os,json,hashlib,contextlib,io
 from pathlib import Path
 from collections import OrderedDict
 from types import SimpleNamespace
@@ -6,6 +6,7 @@ from time import perf_counter
 from unittest.mock import patch
 import unittest
 import numpy as np
+import synthetic_curve_scenes as scenes
 from test_mesh_cache import Point,load as load_mesh
 ROOT=Path(__file__).resolve().parents[1]
 class Dag:
@@ -13,7 +14,7 @@ class Dag:
  def fullPathName(self):return self.name
  def inclusiveMatrix(self):return SimpleNamespace(getElement=lambda i,j:self.matrix[i,j])
 def load():
- path=ROOT/'weightCurveTool/tools/BoundaryQueryCache.py';tree=ast.parse(path.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
+ path=ROOT.parents[1]/'tools/BoundaryQueryCache.py';tree=ast.parse(path.read_text());tree.body=[n for n in tree.body if not isinstance(n,(ast.Import,ast.ImportFrom))]
  ns=dict(__name__="unit_no_package",__package__="",os=os,json=json,hashlib=hashlib,OrderedDict=OrderedDict,perf_counter=perf_counter,np=np,cmds=SimpleNamespace(ls=lambda name,**kw:[name+'uuid']),om=SimpleNamespace(MSpace=SimpleNamespace(kWorld=0,kObject=1)))
  exec(compile(tree,str(path),'exec'),ns);return ns
 class QueryCacheTests(unittest.TestCase):
@@ -85,8 +86,7 @@ class QueryCacheTests(unittest.TestCase):
 
 class IntegratedBoundaryTests(unittest.TestCase):
  def test_warm_moved_boundary_and_normal_edit_match_fresh_geometry(self):
-  path=ROOT/'verification/curves/tests/test_strict_integration.py';spec=importlib.util.spec_from_file_location('boundary_integration',path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-  scene=m.Scene();original_mesh=scene.om.MFnMesh
+  scene=scenes.Scene();original_mesh=scene.om.MFnMesh
   class Mesh:
    def __init__(self):self.base=original_mesh(None)
    def __getattr__(self,name):return getattr(self.base,name)
@@ -94,7 +94,7 @@ class IntegratedBoundaryTests(unittest.TestCase):
    def getVertices(self):return [len(f) for f in scene.faces],[v for f in scene.faces for v in f]
    def getTriangles(self):return [2]*len(scene.faces),[v for a,b,c,d in scene.faces for v in (a,b,c,a,c,d)]
    def getEdgeVertices(self,i):return scene.edges[i]
-   def getNormals(self,space):return [m.V(0,0,scene.normal)]
+   def getNormals(self,space):return [scenes.V(0,0,scene.normal)]
    def getNormalIds(self):return [len(f) for f in scene.faces],[0 for f in scene.faces for _ in f]
   scene.om.MFnMesh=lambda path:Mesh();scene.om.MSpace.kObject=1
   factory=scene.om.MFnNurbsCurve;radius=[10.]
@@ -103,7 +103,7 @@ class IntegratedBoundaryTests(unittest.TestCase):
    if name=='fwd':result.r=radius[0]
    return result
   scene.om.MFnNurbsCurve=type('Factory',(),{'kOpen':1,'__new__':lambda cls,path:curve(path)})
-  ns=m.region_ns(scene);ns['_wct_shape']=lambda name,kind:Dag(name)
+  ns=scenes.region_ns(scene);ns['_wct_shape']=lambda name,kind:Dag(name)
   topology=load_mesh();queries=load();sessions=[]
   ns['_prepare_region_mesh']=topology['prepare_region_mesh']
   def prepare(*args,**kwargs):
@@ -128,11 +128,7 @@ class IntegratedBoundaryTests(unittest.TestCase):
 
 class FoldedBoundaryCacheTests(unittest.TestCase):
  def test_folded_strip_cached_side_classification_matches_uncached(self):
-  import sys,importlib
-  folder=str(ROOT/'verification/curves/tests');sys.path.insert(0,folder)
-  try:fold=importlib.import_module('test_folded_decay')
-  finally:sys.path.remove(folder)
-  scene=fold.FoldedScene();region=scene.region();ns=fold.region_ns(scene);cache=load()
+  scene=scenes.FoldedScene();region=scene.region();ns=scenes.region_ns(scene);cache=load()
   cache['_curve_key']=lambda common,path,curve:(common,path,curve.s)
   mesh=scene.mesh();arguments=(mesh,region['points'],region['graph'],region['coarse_interior'],region['fwd_loop'],region['bwd_loop'],region['median'],region['curves'])
   with contextlib.redirect_stdout(io.StringIO()):

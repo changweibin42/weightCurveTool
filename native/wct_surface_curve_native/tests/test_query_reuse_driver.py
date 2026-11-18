@@ -27,7 +27,7 @@ class QueryReuseDriverTests(unittest.TestCase):
             if 'remove' in kwargs:
                 self.preferences.pop(kwargs['remove'], None)
 
-        path = ROOT / 'weightCurveTool/tools/NativeQueryReuse.py'
+        path = ROOT.parents[1] / 'tools/NativeQueryReuse.py'
         tree = ast.parse(path.read_text())
         tree.body = [n for n in tree.body if not isinstance(n, (ast.Import, ast.ImportFrom))]
         self.ns = dict(json=json, os=os, cmds=SimpleNamespace(optionVar=option),

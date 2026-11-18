@@ -11,14 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class GitHubIntegrationTests(unittest.TestCase):
     def test_unmodified_runtime_matches_reviewed_commit_byte_for_byte(self):
-        manifest = json.loads((ROOT / 'github_baseline.json').read_text())
-        runtime = ROOT / 'weightCurveTool'
+        manifest = json.loads((ROOT / 'tests/reference_native/github_baseline.json').read_text())
+        runtime = ROOT.parents[1]
         changed = set(manifest['changed_runtime_files'])
         added = set(manifest['added_runtime_files'])
         baseline = manifest['baseline_runtime_sha256']
-        actual = {p.relative_to(runtime).as_posix() for p in runtime.rglob('*.py')
-                  if 'backUp' not in p.parts}
-        self.assertEqual(actual, set(baseline) | added)
+        runtime_files = (*runtime.glob('*.py'), *(runtime / 'tools').rglob('*.py'))
+        actual = {p.relative_to(runtime).as_posix() for p in runtime_files}
+        self.assertEqual(actual, set(baseline) | added | {'start_weight_curve_tool.py'})
         for relative, expected in baseline.items():
             if relative in changed:
                 continue
@@ -30,7 +30,7 @@ class GitHubIntegrationTests(unittest.TestCase):
 
     def test_repository_cache_validation_and_diagnostics_remain(self):
         before = ast.parse((ROOT / 'tests/reference_native/RestPoseSurface_before.py').read_text())
-        after = ast.parse((ROOT / 'weightCurveTool/tools/RestPoseSurface.py').read_text())
+        after = ast.parse((ROOT.parents[1] / 'tools/RestPoseSurface.py').read_text())
 
         def methods(tree):
             cls = next(n for n in tree.body if isinstance(n, ast.ClassDef)
